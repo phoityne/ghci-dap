@@ -1,0 +1,129 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.1.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: e5559edafd71980e9557e95fe551579459e2c8b5644c85a0428fb8ade3bc87cc
+
+name:           ghci-dap
+version:        0.0.12.0
+synopsis:       ghci-dap is a GHCi having DAP interface.
+description:    Please see README.md
+category:       Development
+homepage:       https://github.com/phoityne/ghci-dap
+bug-reports:    https://github.com/phoityne/ghci-dap/issues
+author:         phoityne_hs
+maintainer:     phoityne.hs@gmail.com
+copyright:      2017-2019 phoityne_hs
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    Changelog.md
+    src-c-8.0/HsVersions.h
+    src-c-8.0/PosixSource.h
+    src-c-8.2/HsVersions.h
+    src-c-8.2/PosixSource.h
+    src-c-8.4/HsVersions.h
+    src-c-8.4/PosixSource.h
+    src-c-8.6/HsVersions.h
+    src-c-8.6/PosixSource.h
+
+executable ghci-dap
+  main-is: Main.hs
+  other-modules:
+      Haskell.DAP.GHCi.Command
+      Haskell.DAP.GHCi.Constant
+      Haskell.DAP.GHCi.Type
+      Haskell.DAP.GHCi.Utility
+      Paths_ghci_dap
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall -fno-warn-unused-do-bind -fno-warn-name-shadowing
+  cpp-options: -DGHCI
+  cc-options: -fPIC
+  build-depends:
+      array
+    , base
+    , bytestring
+    , containers
+    , deepseq
+    , directory
+    , filepath
+    , ghc
+    , ghc-boot
+    , ghc-paths
+    , ghci
+    , haskeline
+    , haskell-dap
+    , process
+    , text
+    , time
+    , transformers
+  if (impl(ghc >=8.0.0)) && (impl(ghc <8.1.0))
+    other-modules:
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCMain
+    hs-source-dirs:
+        app-ghc-8.0
+  if (impl(ghc >=8.2.0)) && (impl(ghc <8.3.0))
+    other-modules:
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCMain
+    hs-source-dirs:
+        app-ghc-8.2
+  if (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
+    other-modules:
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCMain
+    hs-source-dirs:
+        app-ghc-8.4
+  if (impl(ghc >=8.6.0)) && (impl(ghc <8.7.0))
+    other-modules:
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCMain
+    hs-source-dirs:
+        app-ghc-8.6
+  if (impl(ghc >=8.0.0)) && (impl(ghc <8.1.0))
+    include-dirs:
+        src-c-8.0/
+    c-sources:
+        src-c-8.0/hschooks.c
+  if (impl(ghc >=8.2.0)) && (impl(ghc <8.3.0))
+    include-dirs:
+        src-c-8.2/
+    c-sources:
+        src-c-8.2/hschooks.c
+  if (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
+    include-dirs:
+        src-c-8.4/
+    c-sources:
+        src-c-8.4/hschooks.c
+  if (impl(ghc >=8.6.0)) && (impl(ghc <8.7.0))
+    include-dirs:
+        src-c-8.6/
+    c-sources:
+        src-c-8.6/hschooks.c
+  if os(windows)
+    build-depends:
+        Win32
+  else
+    ghc-options: -dynamic
+    build-depends:
+        unix
+  default-language: Haskell2010
