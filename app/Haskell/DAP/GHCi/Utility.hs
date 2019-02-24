@@ -22,7 +22,7 @@ import Control.Concurrent
 import Haskell.DAP.GHCi.Constant
 import Haskell.DAP.GHCi.Type
 
-import qualified GHCi.DAP.IFData as D
+import qualified GHCi.DAP as D
 
 -- |
 --

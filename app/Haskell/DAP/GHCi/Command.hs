@@ -29,7 +29,7 @@ import qualified Data.List as L
 
 import System.Console.Haskeline
 
-import qualified GHCi.DAP.IFData as D
+import qualified GHCi.DAP as D
 import Haskell.DAP.GHCi.Type
 import Haskell.DAP.GHCi.Constant
 import Haskell.DAP.GHCi.Utility
@@ -102,21 +102,21 @@ dapScopesCommand ctxMVar argsStr = do
   where
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
     withArgs (Right args) = do
-      let idx  = D.frameIdScopesArguments args
-      getScopesBody idx
+      let idx  = D.frameIdScopesRequestArguments args
+      getScopesResponseBody idx
 
     -- |
     --
-    getScopesBody :: Int -> GHCi.GHCi (Either String D.ScopesBody)
-    getScopesBody curIdx = do
-      -- liftIO $ putStrLn $ "[DAP][getScopesBody] frame id." ++ frameIdStr
+    getScopesResponseBody :: Int -> GHCi.GHCi (Either String D.ScopesResponseBody)
+    getScopesResponseBody curIdx = do
+      -- liftIO $ putStrLn $ "[DAP][getScopesResponseBody] frame id." ++ frameIdStr
       oldIdx <- liftIO $ frameIdDAPContext <$> readMVar ctxMVar
       let moveIdx = curIdx - oldIdx
 
       tyThings <- withMoveIdx moveIdx
       gobalTT  <- getGlobalBindings
 
-      -- liftIO $ putStrLn $ "[DAP][getScopesBody] tyThings count." ++ show (length tyThings)
+      -- liftIO $ putStrLn $ "[DAP][getScopesResponseBody] tyThings count." ++ show (length tyThings)
       ctx <- liftIO $ takeMVar ctxMVar
       liftIO $ putMVar ctxMVar ctx {
           variableReferenceMapDAPContext = M.empty
@@ -125,8 +125,8 @@ dapScopesCommand ctxMVar argsStr = do
         , frameIdDAPContext = curIdx
         }
     
-      return $ Right D.ScopesBody {
-        D.scopesScopesBody = [
+      return $ Right D.ScopesResponseBody {
+        D.scopesScopesResponseBody = [
           D.defaultScope{
               D.nameScope = _GHCi_SCOPE
             , D.variablesReferenceScope = 1
@@ -197,7 +197,7 @@ dapScopesCommand ctxMVar argsStr = do
       Just ty -> return (ty : acc)
       Nothing ->  do
         dflags <- getDynFlags
-        liftIO $ putStrLn $ "[DAP][ERROR][getScopesBody] variable not found. " ++ showSDoc dflags (ppr n)
+        liftIO $ putStrLn $ "[DAP][ERROR][getScopesResponseBody] variable not found. " ++ showSDoc dflags (ppr n)
         return acc
 
       
@@ -227,7 +227,7 @@ dapSetBreakpointsCommand ctxMVar argsStr = do
     -- |
     --
     getModule args = do
-      let srcInfo = D.sourceSetBreakpointsArguments args
+      let srcInfo = D.sourceSetBreakpointsRequestArguments args
           srcPath = D.pathSource srcInfo
 
       modSums <- GHCi.getLoadedModules
@@ -279,9 +279,9 @@ dapSetBreakpointsCommand ctxMVar argsStr = do
 
     -- |
     --
-    addBreakpoints :: D.SetBreakpointsArguments -> ModuleName -> GHCi.GHCi (Either String D.SetBreakpointsResponseBody)
+    addBreakpoints :: D.SetBreakpointsRequestArguments -> ModuleName -> GHCi.GHCi (Either String D.SetBreakpointsResponseBody)
     addBreakpoints args mod = do
-      let srcBPs = D.breakpointsSetBreakpointsArguments args
+      let srcBPs = D.breakpointsSetBreakpointsRequestArguments args
 
       addBps <- mapM (addBP mod) srcBPs
 
@@ -372,9 +372,9 @@ dapSetFunctionBreakpointsCommand ctxMVar argsStr = do
 
     -- |
     --
-    addBreakpoints :: D.SetFunctionBreakpointsArguments -> GHCi.GHCi (Either String D.SetFunctionBreakpointsResponseBody)
+    addBreakpoints :: D.SetFunctionBreakpointsRequestArguments -> GHCi.GHCi (Either String D.SetFunctionBreakpointsResponseBody)
     addBreakpoints args = do
-      let funcBPs = D.breakpointsSetFunctionBreakpointsArguments args
+      let funcBPs = D.breakpointsSetFunctionBreakpointsRequestArguments args
 
       addBps <- mapM addBP funcBPs
 
@@ -587,9 +587,9 @@ dapContinueCommand mvarCtx argsStr =   withArgs (readDAP argsStr)
   
     -- |
     --
-    withArgs :: Either String D.ContinueArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
+    withArgs :: Either String D.ContinueRequestArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) = case  D.exprContinueArguments args of
+    withArgs (Right args) = case  D.exprContinueRequestArguments args of
       Just expr -> runWithStmtTrace expr
       Nothing   -> runNoStmtTrace
 
@@ -766,7 +766,7 @@ dapContinueCommand mvarCtx argsStr =   withArgs (readDAP argsStr)
           return $ Just False
         Right res -> do
           liftIO $ putStrLn $ "[DAP][INFO] hit condition statement result. " ++ stmt ++ " -> " ++ show res
-          return $ Just ("False" == D.resultEvaluateBody res)
+          return $ Just ("False" == D.resultEvaluateResponseBody res)
 
     -- |
     --
@@ -794,9 +794,9 @@ dapContinueCommand mvarCtx argsStr =   withArgs (readDAP argsStr)
           liftIO $ putStrLn $ "[DAP][ERROR] hit condition statement fail. " ++ stmt ++ " -> " ++ err
           return $ Just False
         Right res -> do
-          when ("Bool" /= D.typeEvaluateBody res) $
+          when ("Bool" /= D.typeEvaluateResponseBody res) $
             liftIO $ putStrLn $ "[DAP][INFO] hit condition statement result type is not Bool. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ show res
-          return $ Just ("False" == D.resultEvaluateBody res)
+          return $ Just ("False" == D.resultEvaluateResponseBody res)
 
 
     -- |
@@ -819,9 +819,9 @@ dapContinueCommand mvarCtx argsStr =   withArgs (readDAP argsStr)
         liftIO $ putStrLn $ "[DAP][ERROR] condition statement fail. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ err
         return $ Just False
       Right res -> do
-        when ("Bool" /= D.typeEvaluateBody res) $
+        when ("Bool" /= D.typeEvaluateResponseBody res) $
           liftIO $ putStrLn $ "[DAP][ERROR] condition statement result type is not Bool. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ show res
-        return $ Just ("False" == D.resultEvaluateBody res)
+        return $ Just ("False" == D.resultEvaluateResponseBody res)
 
     -- |
     --   @return
@@ -839,7 +839,7 @@ dapContinueCommand mvarCtx argsStr =   withArgs (readDAP argsStr)
           return $ Just False
 
         Right res -> do
-          let msg = D.resultEvaluateBody res ++ "\n"
+          let msg = D.resultEvaluateResponseBody res ++ "\n"
               body = D.defaultOutputEventBody { D.outputOutputEventBody = msg
                                               , D.categoryOutputEventBody = "console"}
 
@@ -876,16 +876,16 @@ withExecResult mvarCtx _ (GHC.ExecBreak{GHC.breakInfo = Nothing}) = do
     Left  msg  -> return $ Left $ "[DAP][ERROR] invalid _exception result." ++ msg
     Right body -> return $ Right D.defaultStoppedEventBody {
         D.reasonStoppedEventBody = "exception"
-      , D.descriptionStoppedEventBody = D.resultEvaluateBody body
-      , D.textStoppedEventBody = D.resultEvaluateBody body
+      , D.descriptionStoppedEventBody = D.resultEvaluateResponseBody body
+      , D.textStoppedEventBody = D.resultEvaluateResponseBody body
       }
 
 {-do
   evalBody <- getEvalBody "_exception" True
   return $   Right D.defaultStoppedEventBody {
               D.reasonStoppedEventBody = "exception"
-            , D.descriptionStoppedEventBody = D.resultEvaluateBody evalBody
-            , D.textStoppedEventBody = D.resultEvaluateBody evalBody
+            , D.descriptionStoppedEventBody = D.resultEvaluateResponseBody evalBody
+            , D.textStoppedEventBody = D.resultEvaluateResponseBody evalBody
             }
             -}
 
@@ -904,7 +904,7 @@ dapNextCommand mvarCtx argsStr = do
   printDAP res
 
   where
-    withArgs :: Either String D.NextArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
+    withArgs :: Either String D.NextRequestArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
     withArgs (Right _) = do
       clearTmpDAPContext
@@ -936,7 +936,7 @@ dapStepInCommand mvarCtx argsStr = do
   printDAP res
   
   where
-    withArgs :: Either String D.StepInArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
+    withArgs :: Either String D.StepInRequestArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
     withArgs (Right _) = do
       clearTmpDAPContext
@@ -972,7 +972,7 @@ dapStackTraceCommand ctxMVar argsStr = do
   printDAP res
   
   where
-    withArgs :: Either String D.StackTraceArguments -> GHCi.GHCi (Either String D.StackTraceBody)
+    withArgs :: Either String D.StackTraceRequestArguments -> GHCi.GHCi (Either String D.StackTraceResponseBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
     withArgs (Right _) = GHC.getResumeContext >>= \case
       [] -> return $ Left "no stacktrace found."
@@ -986,9 +986,9 @@ dapStackTraceCommand ctxMVar argsStr = do
 
         traces <- mapM resumeHist2stackFrame $ take maxSize $ GHC.resumeHistory r
 
-        return $ Right D.defaultStackTraceBody {
-            D.stackFramesStackTraceBody = traces
-          , D.totalFramesStackTraceBody = length traces
+        return $ Right D.defaultStackTraceResponseBody {
+            D.stackFramesStackTraceResponseBody = traces
+          , D.totalFramesStackTraceResponseBody = length traces
           }
       False -> do
         dflags <- GHCi.getDynFlags
@@ -1000,9 +1000,9 @@ dapStackTraceCommand ctxMVar argsStr = do
         
         let traces = start : hists
 
-        return $ Right D.defaultStackTraceBody {
-            D.stackFramesStackTraceBody = traces
-          , D.totalFramesStackTraceBody = length traces
+        return $ Right D.defaultStackTraceResponseBody {
+            D.stackFramesStackTraceResponseBody = traces
+          , D.totalFramesStackTraceResponseBody = length traces
           }
 
     resume2stackframe r = D.defaultStackFrame {
@@ -1064,14 +1064,14 @@ dapVariablesCommand ctxMVar argsStr = do
   printDAP res
 
   where
-    withArgs :: Either String D.VariablesArguments -> GHCi.GHCi (Either String D.VariablesBody)
+    withArgs :: Either String D.VariablesRequestArguments -> GHCi.GHCi (Either String D.VariablesResponseBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
     withArgs (Right args) = do
-      let idx  = D.variablesReferenceVariablesArguments args
+      let idx  = D.variablesReferenceVariablesRequestArguments args
 
       vals <- getBindingVariables ctxMVar idx
 
-      return $ Right $ D.VariablesBody $  L.sortBy compName vals
+      return $ Right $ D.VariablesResponseBody $  L.sortBy compName vals
 
     compName a b = compare (D.nameVariable a) (D.nameVariable b)
 
@@ -1328,40 +1328,40 @@ dapEvaluateCommand ctxMVar argsStr = do
   where
     -- |
     --
-    withArgs :: Either String D.EvaluateArguments -> GHCi.GHCi (Either String D.EvaluateBody)
+    withArgs :: Either String D.EvaluateRequestArguments -> GHCi.GHCi (Either String D.EvaluateResponseBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) = case D.contextEvaluateArguments args of
+    withArgs (Right args) = case D.contextEvaluateRequestArguments args of
       Nothing     -> runRepl args
       Just "repl" -> runRepl args
       _           -> runOther args
 
     -- |
     --
-    runRepl ::  D.EvaluateArguments -> GHCi.GHCi (Either String D.EvaluateBody)
+    runRepl ::  D.EvaluateRequestArguments -> GHCi.GHCi (Either String D.EvaluateResponseBody)
     runRepl args
-      | null (D.expressionEvaluateArguments args) = return $ Right D.defaultEvaluateBody {
-          D.resultEvaluateBody = "no input."
-        , D.typeEvaluateBody   = "no input."
-        , D.variablesReferenceEvaluateBody = 0
+      | null (D.expressionEvaluateRequestArguments args) = return $ Right D.defaultEvaluateResponseBody {
+          D.resultEvaluateResponseBody = "no input."
+        , D.typeEvaluateResponseBody   = "no input."
+        , D.variablesReferenceEvaluateResponseBody = 0
         }
       | otherwise = do
-        let stmt = D.expressionEvaluateArguments args
+        let stmt = D.expressionEvaluateRequestArguments args
             isRefable = True
 
         runStmtDAP ctxMVar isRefable stmt
 
     -- |
     --
-    runOther ::  D.EvaluateArguments -> GHCi.GHCi (Either String D.EvaluateBody)
+    runOther ::  D.EvaluateRequestArguments -> GHCi.GHCi (Either String D.EvaluateResponseBody)
     runOther args = do 
-      let nameStr = D.expressionEvaluateArguments args
+      let nameStr = D.expressionEvaluateRequestArguments args
       names <- gcatch (GHC.parseName nameStr) parseNameErrorHandler
       names2EvalBody ctxMVar True nameStr names
 
 
 -- |
 --
-runStmtDAP :: MVar DAPContext -> Bool -> String -> GHCi.GHCi (Either String D.EvaluateBody)
+runStmtDAP :: MVar DAPContext -> Bool -> String -> GHCi.GHCi (Either String D.EvaluateResponseBody)
 runStmtDAP ctxMVar isRefable stmt = do
   clearTmpDAPContext
 
@@ -1379,7 +1379,7 @@ runStmtDAP ctxMVar isRefable stmt = do
 -- |
 --
 --
-names2EvalBody :: MVar DAPContext -> Bool -> String -> [GHC.Name] -> GHCi.GHCi (Either String D.EvaluateBody)
+names2EvalBody :: MVar DAPContext -> Bool -> String -> [GHC.Name] -> GHCi.GHCi (Either String D.EvaluateResponseBody)
 names2EvalBody ctxMVar isRefable key names
   | 0 == length names = return $ Left $ "Not in scope. " ++ key
   | 1 == length names = withName $ head names
@@ -1399,16 +1399,16 @@ names2EvalBody ctxMVar isRefable key names
     withTyThing x = do
       liftIO $ putStrLn "[DAP][INFO]  withTyThing x Not yet supported."
       dflags <- getDynFlags
-      return $ Right D.defaultEvaluateBody {
-               D.resultEvaluateBody = showSDoc dflags (ppr x)
-             , D.typeEvaluateBody   = showSDoc dflags (ppr x)
-             , D.variablesReferenceEvaluateBody = 0
+      return $ Right D.defaultEvaluateResponseBody {
+               D.resultEvaluateResponseBody = showSDoc dflags (ppr x)
+             , D.typeEvaluateResponseBody   = showSDoc dflags (ppr x)
+             , D.variablesReferenceEvaluateResponseBody = 0
              }
 
     -- |
     --  Term https://hackage.haskell.org/package/ghc-8.2.1/docs/RtClosureInspect.html
     --
-    withTerm :: GHC.Id -> Term -> GHCi.GHCi D.EvaluateBody
+    withTerm :: GHC.Id -> Term -> GHCi.GHCi D.EvaluateResponseBody
     withTerm _ t@(Term ty _ _ _) = do
       dflags <- getDynFlags
       termSDoc <- gcatch (showTerm t) showTermErrorHandler
@@ -1421,10 +1421,10 @@ names2EvalBody ctxMVar isRefable key names
 
       -- liftIO $ putStrLn "[DAP][INFO] Term Not yet supported."
 
-      return D.defaultEvaluateBody {
-               D.resultEvaluateBody = delDQ typeStr valStr'
-             , D.typeEvaluateBody   = typeStr
-             , D.variablesReferenceEvaluateBody = nextIdx
+      return D.defaultEvaluateResponseBody {
+               D.resultEvaluateResponseBody = delDQ typeStr valStr'
+             , D.typeEvaluateResponseBody   = typeStr
+             , D.variablesReferenceEvaluateResponseBody = nextIdx
              }
 
     withTerm _ t@(Prim ty _) = do
@@ -1435,10 +1435,10 @@ names2EvalBody ctxMVar isRefable key names
 
       -- liftIO $ putStrLn "[DAP][INFO] Prim Not yet supported."
 
-      return D.defaultEvaluateBody {
-                D.resultEvaluateBody = valStr
-              , D.typeEvaluateBody   = typeStr
-              , D.variablesReferenceEvaluateBody = 0
+      return D.defaultEvaluateResponseBody {
+                D.resultEvaluateResponseBody = valStr
+              , D.typeEvaluateResponseBody   = typeStr
+              , D.variablesReferenceEvaluateResponseBody = 0
               }
 
     withTerm _ t@(Suspension clsr ty _ _) = do
@@ -1447,10 +1447,10 @@ names2EvalBody ctxMVar isRefable key names
       let typeStr = "closure(" ++ show clsr ++ ")" ++ " :: " ++ showSDoc dflags (pprTypeForUser ty) ++ " # " ++ showSDoc dflags termSDoc
 
       liftIO $ putStrLn "[DAP][INFO] Suspension Not yet supported."
-      return D.defaultEvaluateBody {
-                D.resultEvaluateBody = typeStr
-              , D.typeEvaluateBody   = typeStr
-              , D.variablesReferenceEvaluateBody = 0
+      return D.defaultEvaluateResponseBody {
+                D.resultEvaluateResponseBody = typeStr
+              , D.typeEvaluateResponseBody   = typeStr
+              , D.variablesReferenceEvaluateResponseBody = 0
               }
 
     withTerm _ (NewtypeWrap ty _ wt) = do
@@ -1460,10 +1460,10 @@ names2EvalBody ctxMVar isRefable key names
           valStr  = showSDoc dflags termSDoc
 
       liftIO $ putStrLn "[DAP][INFO] NewtypeWrap Not yet supported."
-      return D.defaultEvaluateBody {
-                D.resultEvaluateBody = valStr
-              , D.typeEvaluateBody   = typeStr
-              , D.variablesReferenceEvaluateBody = 0
+      return D.defaultEvaluateResponseBody {
+                D.resultEvaluateResponseBody = valStr
+              , D.typeEvaluateResponseBody   = typeStr
+              , D.variablesReferenceEvaluateResponseBody = 0
               }
 
     withTerm _ (RefWrap ty wt) = do
@@ -1473,10 +1473,10 @@ names2EvalBody ctxMVar isRefable key names
           valStr  = showSDoc dflags termSDoc
 
       liftIO $ putStrLn "[DAP][INFO] RefWrap Not yet supported."
-      return D.defaultEvaluateBody {
-                D.resultEvaluateBody = valStr
-              , D.typeEvaluateBody   = typeStr
-              , D.variablesReferenceEvaluateBody = 0
+      return D.defaultEvaluateResponseBody {
+                D.resultEvaluateResponseBody = valStr
+              , D.typeEvaluateResponseBody   = typeStr
+              , D.variablesReferenceEvaluateResponseBody = 0
               }
 
     delDQ :: String -> String -> String

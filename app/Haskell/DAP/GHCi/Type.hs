@@ -7,7 +7,7 @@ import qualified Data.Map as M
 import Control.Concurrent
 import HscTypes
 
-import qualified GHCi.DAP.IFData as D
+import qualified GHCi.DAP as D
 
 
 -- |

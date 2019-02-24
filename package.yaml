@@ -1,5 +1,5 @@
 name: ghci-dap
-version: '0.0.12.0'
+version: '0.0.11.0'
 synopsis: ghci-dap is a GHCi having DAP interface.
 description: Please see README.md
 category: Development
@@ -12,14 +12,14 @@ bug-reports: https://github.com/phoityne/ghci-dap/issues
 extra-source-files:
 - README.md
 - Changelog.md
-- src-c-8.0/HsVersions.h
-- src-c-8.0/PosixSource.h
-- src-c-8.2/HsVersions.h
-- src-c-8.2/PosixSource.h
 - src-c-8.4/HsVersions.h
 - src-c-8.4/PosixSource.h
 - src-c-8.6/HsVersions.h
 - src-c-8.6/PosixSource.h
+
+when:
+- condition: impl(ghc < 8.4.0)
+  dependencies: unsupported-ghc-version > 1 && < 1
 
 executables:
   ghci-dap:
@@ -53,23 +53,11 @@ executables:
     - text
     - haskell-dap
     when:
-    - condition: (impl(ghc >=8.0.0)) && (impl(ghc <8.1.0))
-      source-dirs: app-ghc-8.0
-    - condition: (impl(ghc >=8.2.0)) && (impl(ghc <8.3.0))
-      source-dirs: app-ghc-8.2
     - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
       source-dirs: app-ghc-8.4
     - condition: (impl(ghc >=8.6.0)) && (impl(ghc <8.7.0))
       source-dirs: app-ghc-8.6
       
-    - condition: (impl(ghc >=8.0.0)) && (impl(ghc <8.1.0))
-      c-sources: src-c-8.0/hschooks.c
-      include-dirs:
-      - src-c-8.0/
-    - condition: (impl(ghc >=8.2.0)) && (impl(ghc <8.3.0))
-      c-sources: src-c-8.2/hschooks.c
-      include-dirs:
-      - src-c-8.2/
     - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
       c-sources: src-c-8.4/hschooks.c
       include-dirs:
@@ -78,12 +66,12 @@ executables:
       c-sources: src-c-8.6/hschooks.c
       include-dirs:
       - src-c-8.6/
+
     - condition: os(windows)
       then:
         dependencies:
         - Win32
       else:
-        ghc-options: -dynamic
         dependencies:
         - unix
         
