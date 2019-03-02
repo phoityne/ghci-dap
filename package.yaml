@@ -51,7 +51,7 @@ executables:
     - bytestring
     - deepseq
     - text
-    - haskell-dap
+    - haskell-dap >=0.0.11.0
     when:
     - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
       source-dirs: app-ghc-8.4
