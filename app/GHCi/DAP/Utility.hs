@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Haskell.DAP.GHCi.Utility where
+module GHCi.DAP.Utility where
 
 import qualified GHC
 import qualified GHCi.UI.Monad as G
@@ -19,10 +19,10 @@ import Data.Word
 import Control.Monad.IO.Class
 import Control.Concurrent
 
-import Haskell.DAP.GHCi.Constant
-import Haskell.DAP.GHCi.Type
+import GHCi.DAP.Constant
+import GHCi.DAP.Type
 
-import qualified GHCi.DAP as D
+import qualified Haskell.DAP as D
 
 -- |
 --

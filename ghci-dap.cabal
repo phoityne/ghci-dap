@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 57606f2d9732818bdd379b36c13c2946053d3b2ba4d3dc38f22bd6ba4233009e
+-- hash: 797b27c7333c5791aa0c768dce9f0f4a0a61f71fbb0221d0aaf8db77843a47b3
 
 name:           ghci-dap
 version:        0.0.11.0
@@ -30,10 +30,10 @@ extra-source-files:
 executable ghci-dap
   main-is: Main.hs
   other-modules:
-      Haskell.DAP.GHCi.Command
-      Haskell.DAP.GHCi.Constant
-      Haskell.DAP.GHCi.Type
-      Haskell.DAP.GHCi.Utility
+      GHCi.DAP.Command
+      GHCi.DAP.Constant
+      GHCi.DAP.Type
+      GHCi.DAP.Utility
       Paths_ghci_dap
   hs-source-dirs:
       app
@@ -42,7 +42,7 @@ executable ghci-dap
   cc-options: -fPIC
   build-depends:
       array
-    , base
+    , base >=4.7 && <5
     , bytestring
     , containers
     , deepseq
@@ -53,7 +53,7 @@ executable ghci-dap
     , ghc-paths
     , ghci
     , haskeline
-    , haskell-dap >=0.0.11.0
+    , haskell-dap >=0.0.12.0
     , process
     , text
     , time

@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Haskell.DAP.GHCi.Command where
+module GHCi.DAP.Command where
 
 import qualified GHC
 import GhcMonad
@@ -29,10 +29,10 @@ import qualified Data.List as L
 
 import System.Console.Haskeline
 
-import qualified GHCi.DAP as D
-import Haskell.DAP.GHCi.Type
-import Haskell.DAP.GHCi.Constant
-import Haskell.DAP.GHCi.Utility
+import qualified Haskell.DAP as D
+import GHCi.DAP.Type
+import GHCi.DAP.Constant
+import GHCi.DAP.Utility
 
 
 -- |

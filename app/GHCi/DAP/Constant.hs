@@ -1,4 +1,4 @@
-module Haskell.DAP.GHCi.Constant where
+module GHCi.DAP.Constant where
 
   
 -- |

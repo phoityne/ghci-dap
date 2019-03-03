@@ -6,8 +6,8 @@ module Main where
 import qualified GHCMain as G
 import qualified GHCi.UI as G
 import Control.Concurrent
-import Haskell.DAP.GHCi.Command
-import Haskell.DAP.GHCi.Type
+import GHCi.DAP.Command
+import GHCi.DAP.Type
 
 import Paths_ghci_dap (version)
 import Data.Version

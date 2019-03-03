@@ -152,7 +152,7 @@ import GHCi.Leak
 ------------------------------------------------------------------------------
 -- DAP
 ------------------------------------------------------------------------------
-import qualified Haskell.DAP.GHCi.Type as DAP
+import qualified GHCi.DAP.Type as DAP
 import InteractiveEval (ExecResult)
 import Control.Concurrent
 

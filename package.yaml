@@ -35,7 +35,7 @@ executables:
     cc-options: -fPIC
     cpp-options: -DGHCI
     dependencies:
-    - base
+    - base >=4.7 && <5
     - ghc
     - ghci
     - ghc-paths
@@ -51,7 +51,7 @@ executables:
     - bytestring
     - deepseq
     - text
-    - haskell-dap >=0.0.11.0
+    - haskell-dap >=0.0.12.0
     when:
     - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
       source-dirs: app-ghc-8.4

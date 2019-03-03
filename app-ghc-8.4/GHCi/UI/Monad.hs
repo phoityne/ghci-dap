@@ -64,7 +64,7 @@ import Control.Monad.IO.Class
 import Data.Map.Strict (Map)
 import qualified GHC.LanguageExtensions as LangExt
 
-import qualified Haskell.DAP.GHCi.Type as DAP
+import qualified GHCi.DAP.Type as DAP
 import Control.Concurrent
 
 

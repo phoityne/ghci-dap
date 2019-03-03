@@ -1,4 +1,4 @@
-module Haskell.DAP.GHCi.Type where
+module GHCi.DAP.Type where
 
 import qualified GHC
 import RtClosureInspect
@@ -7,7 +7,7 @@ import qualified Data.Map as M
 import Control.Concurrent
 import HscTypes
 
-import qualified GHCi.DAP as D
+import qualified Haskell.DAP as D
 
 
 -- |
