@@ -71,8 +71,6 @@ dapCmdRunner cmd ctxMVar str = do
   
   lift $ cmd ctxMVar str
 
-  liftIO $ putStrLn _DAP_CMD_END
-
   return False
 
 
@@ -150,7 +148,7 @@ dapScopesCommand ctxMVar argsStr = do
     withMoveIdx moveIdx
       | 0 == moveIdx = GHC.getBindings
       | 0 < moveIdx = back moveIdx
-      | otherwise = forward moveIdx
+      | otherwise = forward (negate moveIdx)
   
     -- |
     --
@@ -982,26 +980,29 @@ dapStackTraceCommand ctxMVar argsStr = do
       True -> do
         dflags <- GHCi.getDynFlags
         let maxSize = GHC.ghciHistSize dflags
-        -- liftIO $ putStrLn $ "[DAP][INFO] " ++ show maxSize
+            hist    = GHC.resumeHistory r
 
-        traces <- mapM resumeHist2stackFrame $ take maxSize $ GHC.resumeHistory r
+        traces <- mapM resumeHist2stackFrame $ take maxSize hist
+         
+        let traces' = setFrameIdx 0 traces
 
         return $ Right D.defaultStackTraceResponseBody {
-            D.stackFramesStackTraceResponseBody = traces
+            D.stackFramesStackTraceResponseBody = traces'
           , D.totalFramesStackTraceResponseBody = length traces
           }
       False -> do
         dflags <- GHCi.getDynFlags
         let start  = resume2stackframe r
             maxSize = (GHC.ghciHistSize dflags) - 1
-        -- liftIO $ putStrLn $ "[DAP][INFO] " ++ show maxSize
+            hist    = GHC.resumeHistory r
 
-        hists <- mapM resumeHist2stackFrame $ take maxSize $ GHC.resumeHistory r
+        hists <- mapM resumeHist2stackFrame $ take maxSize hist
         
         let traces = start : hists
+            traces' = setFrameIdx 0 traces
 
         return $ Right D.defaultStackTraceResponseBody {
-            D.stackFramesStackTraceResponseBody = traces
+            D.stackFramesStackTraceResponseBody = traces'
           , D.totalFramesStackTraceResponseBody = length traces
           }
 
@@ -1050,7 +1051,8 @@ dapStackTraceCommand ctxMVar argsStr = do
       , D.endColumnStackFrame = getEndCol span
       }
     
-
+    setFrameIdx _ [] = []
+    setFrameIdx idx (x:xs) = x{D.idStackFrame = idx} : setFrameIdx (idx+1) xs
 
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-variables
