@@ -2,8 +2,9 @@
 
 module GHCi.DAP.Utility where
 
-import qualified GHC
-import qualified GHCi.UI.Monad as G
+import qualified GHC as G
+import qualified GHCi.UI.Monad as Gi hiding (runStmt)
+
 import Outputable
 import Exception
 
@@ -18,6 +19,7 @@ import Data.Word
 
 import Control.Monad.IO.Class
 import Control.Concurrent
+import Control.Monad
 
 import GHCi.DAP.Constant
 import GHCi.DAP.Type
@@ -119,7 +121,7 @@ showDAP = show
 
 -- |
 --
-printDAP :: Show a => a -> G.GHCi ()
+printDAP :: Show a => a -> Gi.GHCi ()
 printDAP dat = do
   let outStr = _DAP_HEADER ++ showDAP dat
 
@@ -127,7 +129,7 @@ printDAP dat = do
 
 -- |
 --
-printOutputEventDAP ::  (Either String D.OutputEventBody) -> G.GHCi ()
+printOutputEventDAP ::  (Either String D.OutputEventBody) -> Gi.GHCi ()
 printOutputEventDAP dat = do
   let outStr = _DAP_HEADER_OUTPUT_EVENT ++ showDAP dat
 
@@ -136,12 +138,12 @@ printOutputEventDAP dat = do
 
 -- |
 --
-clearTmpDAPContext :: G.GHCi ()
+clearTmpDAPContext :: Gi.GHCi ()
 clearTmpDAPContext = do
-  mvarCtx <- G.dapContextGHCiState  <$> G.getGHCiState 
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState 
 
-  ctx <- liftIO $ takeMVar mvarCtx
-  liftIO $ putMVar mvarCtx ctx{
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx{
       traceCmdExecResultDAPContext   = []
     , doContinueExecResultDAPContext = []
     , runStmtDeclExceptionDAPContext = []
@@ -150,19 +152,19 @@ clearTmpDAPContext = do
 
 -- |
 --
-isExceptionResume :: GHC.Resume -> Bool
-isExceptionResume (GHC.Resume{GHC.resumeBreakInfo = a}) = isNothing a
+isExceptionResume :: G.Resume -> Bool
+isExceptionResume (G.Resume{G.resumeBreakInfo = a}) = isNothing a
 
 
 -- |
 --
-parseNameErrorHandler :: SomeException -> G.GHCi [GHC.Name]
+parseNameErrorHandler :: SomeException -> Gi.GHCi [G.Name]
 parseNameErrorHandler e = liftIO $ print e >> return []
 
 
 -- |
 --
-showTermErrorHandler :: SomeException -> G.GHCi SDoc
+showTermErrorHandler :: SomeException -> Gi.GHCi SDoc
 showTermErrorHandler e = return $ text $ show e
 
 -- |
@@ -176,14 +178,43 @@ getNameTypeValue str = (strip nameStr, strip typeStr, strip valueStr)
 
 -- |
 --
-getRunStmtSourceError :: G.GHCi String
+getRunStmtSourceError :: Gi.GHCi String
 getRunStmtSourceError = do
-  mvarCtx <- G.dapContextGHCiState <$> G.getGHCiState 
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState 
 
-  ctx <- liftIO $ readMVar mvarCtx
+  ctx <- liftIO $ readMVar ctxMVar
   let errs = runStmtDeclExceptionDAPContext ctx
       msgs = "[DAP][ERROR] error occurred while runStmt." 
             : map show errs
 
   return $ L.intercalate "\n" msgs
-    
+
+
+-- |
+--
+errorL :: String -> Gi.GHCi ()
+errorL msg = logging ErrorLogLevel msg
+
+-- |
+--
+warnL :: String -> Gi.GHCi ()
+warnL msg = logging WarnLogLevel msg
+
+-- |
+--
+infoL :: String -> Gi.GHCi ()
+infoL msg = logging InfoLogLevel msg
+
+-- |
+--
+debugL :: String -> Gi.GHCi ()
+debugL msg = logging DebugLogLevel msg
+
+-- |
+--
+logging :: LogLevel -> String -> Gi.GHCi ()
+logging l msg = do
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+  lv <- liftIO $ logLevelDAPContext <$> readMVar ctxMVar
+  when (lv >= l) $ do
+    liftIO $ putStrLn $ show l ++ msg

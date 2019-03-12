@@ -31,6 +31,9 @@ module GHCi.UI (
         getLoadedModules,
         breakCmd,
         deleteCmd,
+        backCmdDAP,
+        forwardCmdDAP,
+        historyCmdDAP,
         traceCmd,
         stepCmd,
         stepLocalCmd,
@@ -148,7 +151,7 @@ import GHC.TopHandler ( topHandler )
 -- DAP
 ------------------------------------------------------------------------------
 import qualified GHCi.DAP.Type as DAP
-import InteractiveEval (ExecResult)
+import InteractiveEval (ExecResult, History)
 import Control.Concurrent
 
 
@@ -3293,15 +3296,18 @@ deleteCmd argLine = withSandboxOnly ":delete" $ do
          | otherwise = return ()
 
 historyCmd :: String -> GHCi ()
-historyCmd arg
+historyCmd arg = historyCmdDAP arg >> return ()
+
+historyCmdDAP :: String -> GHCi (Either String (Resume, [History]))
+historyCmdDAP arg
   | null arg        = history 20
   | all isDigit arg = history (read arg)
-  | otherwise       = liftIO $ putStrLn "Syntax:  :history [num]"
+  | otherwise       = liftIO $ putStrLn "Syntax:  :history [num]" >> return (Left "")
   where
   history num = do
     resumes <- GHC.getResumeContext
     case resumes of
-      [] -> liftIO $ putStrLn "Not stopped at a breakpoint"
+      [] -> liftIO $ putStrLn "Not stopped at a breakpoint" >> return (Left "")
       (r:_) -> do
         let hist = GHC.resumeHistory r
             (took,rest) = splitAt num hist
@@ -3318,18 +3324,31 @@ historyCmd arg
                                  (map (bold . hcat . punctuate colon . map text) names)
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
+        
+        return $ Right (r, took)
 
 bold :: SDoc -> SDoc
 bold c | do_bold   = text start_bold <> c <> text end_bold
        | otherwise = c
 
+withSandboxOnlyDAP :: String -> GHCi [Name] -> GHCi [Name]
+withSandboxOnlyDAP cmd this = do
+   dflags <- getDynFlags
+   if not (gopt Opt_GhciSandbox dflags)
+      then printForUser (text cmd <+>
+                         ptext (sLit "is not supported with -fno-ghci-sandbox")) >> return []
+      else this
+
 backCmd :: String -> GHCi ()
-backCmd arg
+backCmd arg = backCmdDAP arg >> return ()
+
+backCmdDAP :: String -> GHCi [Name]
+backCmdDAP arg
   | null arg        = back 1
   | all isDigit arg = back (read arg)
-  | otherwise       = liftIO $ putStrLn "Syntax:  :back [num]"
+  | otherwise       = liftIO $ putStrLn "Syntax:  :back [num]" >> return []
   where
-  back num = withSandboxOnly ":back" $ do
+  back num = withSandboxOnlyDAP ":back" $ do
       (names, _, pan, _) <- GHC.back num
       printForUser $ ptext (sLit "Logged breakpoint at") <+> ppr pan
       printTypeOfNames names
@@ -3337,13 +3356,18 @@ backCmd arg
       st <- getGHCiState
       enqueueCommands [stop st]
 
+      return names
+
 forwardCmd :: String -> GHCi ()
-forwardCmd arg
+forwardCmd arg = forwardCmdDAP arg >> return ()
+
+forwardCmdDAP :: String -> GHCi [Name]
+forwardCmdDAP arg
   | null arg        = forward 1
   | all isDigit arg = forward (read arg)
-  | otherwise       = liftIO $ putStrLn "Syntax:  :back [num]"
+  | otherwise       = liftIO $ putStrLn "Syntax:  :back [num]" >> return []
   where
-  forward num = withSandboxOnly ":forward" $ do
+  forward num = withSandboxOnlyDAP ":forward" $ do
       (names, ix, pan, _) <- GHC.forward num
       printForUser $ (if (ix == 0)
                         then ptext (sLit "Stopped at")
@@ -3352,6 +3376,8 @@ forwardCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
+
+      return names
 
 -- handle the "break" command
 breakCmd :: String -> GHCi ()

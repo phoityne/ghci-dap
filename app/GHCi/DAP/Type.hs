@@ -24,6 +24,18 @@ type ModuleName = String
 --
 type MVarDAPContext = MVar DAPContext
 
+
+-- |
+--
+data LogLevel = ErrorLogLevel | WarnLogLevel | InfoLogLevel | DebugLogLevel
+  deriving (Eq, Ord)
+
+instance Show LogLevel where
+  show ErrorLogLevel = "[DAP][ERROR]"
+  show WarnLogLevel  = "[DAP][WARN]"
+  show InfoLogLevel  = "[DAP][INFO]"
+  show DebugLogLevel = "[DAP][DEBUG]"
+
 -- |
 --
 data SourceBreakpointInfo = SourceBreakpointInfo {
@@ -45,6 +57,7 @@ data DAPContext = DAPContext {
   , traceCmdExecResultDAPContext   :: [Maybe GHC.ExecResult]
   , doContinueExecResultDAPContext :: [GHC.ExecResult]
   , runStmtDeclExceptionDAPContext :: [SourceError]
+  , logLevelDAPContext :: LogLevel
   }
 
   
@@ -61,6 +74,7 @@ defaultDAPContext = DAPContext {
   , traceCmdExecResultDAPContext = []
   , doContinueExecResultDAPContext = []
   , runStmtDeclExceptionDAPContext = []
+  , logLevelDAPContext = InfoLogLevel
   }
 
   

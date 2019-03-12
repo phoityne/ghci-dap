@@ -23,7 +23,7 @@ main = do
 
   let ghciSettings    = G.defaultGhciSettings mvarCtx
       defaultCommands = G.availableCommands ghciSettings
-      withDapCommands = defaultCommands ++ (dapCommands mvarCtx)
+      withDapCommands = defaultCommands ++ dapCommands
 
   G.ghcMain ghciSettings {G.availableCommands = withDapCommands}
   

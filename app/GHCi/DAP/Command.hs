@@ -2,7 +2,8 @@
 
 module GHCi.DAP.Command where
 
-import qualified GHC
+import qualified GHC as G
+import qualified Module as G
 import GhcMonad
 import HscTypes
 import RdrName
@@ -15,11 +16,9 @@ import DataCon
 import DynFlags
 import RtClosureInspect
 import InteractiveEvalTypes 
-import qualified Module as GHC
-import qualified GHCi.UI as GHCi
-import qualified GHCi.UI.Monad as GHCi hiding (runStmt)
+import qualified GHCi.UI as Gi
+import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 
-import Control.DeepSeq (deepseq)
 import Control.Monad.Trans.Class
 import Control.Concurrent
 import Control.Monad
@@ -37,39 +36,41 @@ import GHCi.DAP.Utility
 
 -- |
 --
-dapCommands :: MVar DAPContext -> [GHCi.Command]
-dapCommands ctx = map mkCmd [
-    ("dap-echo",            dapEcho,                                   noCompletion)
-  , ("dap-scopes",          dapCmdRunner dapScopesCommand ctx,         noCompletion)
-  , ("dap-set-breakpoints", dapCmdRunner dapSetBreakpointsCommand ctx, noCompletion)
+dapCommands :: [Gi.Command]
+dapCommands = map mkCmd [
+    ("dap-echo",            dapCmdRunner dapEcho,                          noCompletion)
+  , ("dap-set-breakpoints", dapCmdRunner dapSetBreakpointsCommand,         noCompletion)
   , ("dap-set-function-breakpoints"
-                  , dapCmdRunner dapSetFunctionBreakpointsCommand ctx, noCompletion)
+                          , dapCmdRunner dapSetFunctionBreakpointsCommand, noCompletion)
   , ("dap-set-function-breakpoint"
-                  , dapCmdRunner dapSetFuncBreakpointCommand ctx, noCompletion)
+                          , dapCmdRunner dapSetFuncBreakpointCommand,      noCompletion)
   , ("dap-delete-breakpoint"
-                  , dapCmdRunner dapDeleteBreakpointCommand  ctx, noCompletion)
-  , ("dap-continue",        dapCmdRunner dapContinueCommand ctx,       noCompletion)
-  , ("dap-next",            dapCmdRunner dapNextCommand ctx,           noCompletion)
-  , ("dap-step-in",         dapCmdRunner dapStepInCommand ctx,         noCompletion)
-  , ("dap-stacktrace",      dapCmdRunner dapStackTraceCommand ctx,     noCompletion)
-  , ("dap-variables",       dapCmdRunner dapVariablesCommand ctx,      noCompletion)
-  , ("dap-evaluate",        dapCmdRunner dapEvaluateCommand ctx,       noCompletion)
+                          , dapCmdRunner dapDeleteBreakpointCommand,       noCompletion)
+  , ("dap-scopes",          dapCmdRunner dapScopesCommand,                 noCompletion)
+  , ("dap-stacktrace",      dapCmdRunner dapStackTraceCommand,             noCompletion)
+  , ("dap-variables",       dapCmdRunner dapVariablesCommand,              noCompletion)
+  , ("dap-continue",        dapCmdRunner dapContinueCommand,               noCompletion)
+  , ("dap-next",            dapCmdRunner dapNextCommand,                   noCompletion)
+  , ("dap-step-in",         dapCmdRunner dapStepInCommand,                 noCompletion)
+  , ("dap-evaluate",        dapCmdRunner dapEvaluateCommand,               noCompletion)
   ]
   where
-    mkCmd (n,a,c) = GHCi.Command { GHCi.cmdName = n
-                              , GHCi.cmdAction = a
-                              , GHCi.cmdHidden = False
-                              , GHCi.cmdCompletionFunc = c
-                              }
+    mkCmd (n,a,c) = Gi.Command {
+                    Gi.cmdName = n
+                  , Gi.cmdAction = a
+                  , Gi.cmdHidden = False
+                  , Gi.cmdCompletionFunc = c
+                  }
 
 
 -- |
 --
-dapCmdRunner :: (MVar DAPContext -> String -> GHCi.GHCi ())
-             ->  MVar DAPContext -> String -> InputT GHCi.GHCi Bool
-dapCmdRunner cmd ctxMVar str = do
+dapCmdRunner :: (String -> Gi.GHCi ())
+             -> String
+             -> InputT Gi.GHCi Bool
+dapCmdRunner cmd str = do
   
-  lift $ cmd ctxMVar str
+  lift $ cmd str
 
   return False
 
@@ -77,13 +78,480 @@ dapCmdRunner cmd ctxMVar str = do
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-echo
 ------------------------------------------------------------------------------------------------
+-- |
+--
+dapEcho :: String -> Gi.GHCi ()
+dapEcho str = liftIO $ putStrLn $ "dap-echo \"" ++ str ++ "\""
+
+      
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-set-breakpoints
+------------------------------------------------------------------------------------------------
+-- |
+--
+dapSetBreakpointsCommand :: String -> Gi.GHCi ()
+dapSetBreakpointsCommand argsStr = do
+  withArgs (readDAP argsStr) >>= printDAP
+
+  where
+    -- |
+    --
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right args) = getModule args >>= \case
+      Left msg  -> return $ Left msg
+      Right mod -> do
+        deleteBreakpoints mod
+        addBreakpoints args mod
+
+    -- |
+    --
+    getModule args = do
+      let srcInfo = D.sourceSetBreakpointsRequestArguments args
+          srcPath = D.pathSource srcInfo
+
+      modSums <- Gi.getLoadedModules
+      let modPaths = map takeModPath modSums
+
+      case filter (isPathMatch srcPath) modPaths of
+        ((m, p):[]) -> do
+          debugL $ "<dapSetBreakpointsCommand> " ++ p ++ " -> " ++ m
+          return $ Right m
+
+        _ -> return $ Left $ "loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+
+    -- |
+    --
+    deleteBreakpoints :: ModuleName -> Gi.GHCi ()
+    deleteBreakpoints mod = do
+      bps <- getDelBPs mod
+      debugL $ "<dapSetBreakpointsCommand> delete src bps " ++ show bps
+      mapM_ delBreakpoint bps
+
+    -- |
+    --
+    getDelBPs :: ModuleName -> Gi.GHCi [Int]
+    getDelBPs mod = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let bpNOs = M.keys $ M.filter ((isModuleMatch mod)) $ srcBPsDAPContext ctx
+          newSrcBPs = M.filter (not . (isModuleMatch mod)) $ srcBPsDAPContext ctx
+
+      liftIO $ putMVar ctxMVar $ ctx {srcBPsDAPContext = newSrcBPs} 
+      return bpNOs
+
+    -- |
+    --
+    isModuleMatch :: ModuleName -> SourceBreakpointInfo -> Bool
+    isModuleMatch mod bpInfo = mod == modNameSourceBreakpointInfo bpInfo
+
+    -- |
+    --
+    takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
+
+    -- |
+    --
+    isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
+
+    -- |
+    --
+    addBreakpoints :: D.SetBreakpointsRequestArguments -> ModuleName -> Gi.GHCi (Either String D.SetBreakpointsResponseBody)
+    addBreakpoints args mod = do
+      let srcBPs = D.breakpointsSetBreakpointsRequestArguments args
+      addBps <- mapM (addBP mod) srcBPs
+
+      updateBpCtx addBps
+
+      return $ Right $ D.SetBreakpointsResponseBody $ map takeBp addBps
+    
+    -- |
+    --
+    addBP :: String -> D.SourceBreakpoint -> Gi.GHCi (ModuleName, D.SourceBreakpoint, D.Breakpoint)
+    addBP mod srcBP = do
+      let lineNo   = show $ D.lineSourceBreakpoint srcBP
+          colNo    = getColNo $ D.columnSourceBreakpoint srcBP
+          argStr   = mod ++ " " ++ lineNo ++ " " ++ colNo
+
+      bp <- addBreakpoint argStr
+
+      return (mod, srcBP, bp)
+
+    -- |
+    --
+    getColNo :: Maybe Int -> String
+    getColNo Nothing  = ""
+    getColNo (Just 1) = ""
+    getColNo (Just a) = show a
+
+    -- |
+    --
+    updateBpCtx :: [(ModuleName, D.SourceBreakpoint, D.Breakpoint)] -> Gi.GHCi ()
+    updateBpCtx bps = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let cur = srcBPsDAPContext ctx
+          new = M.fromList $ foldr convSrcBps [] bps
+      liftIO $ putMVar ctxMVar $ ctx{srcBPsDAPContext = (M.union cur new)}
+
+    -- |
+    --
+    convSrcBps :: (ModuleName, D.SourceBreakpoint, D.Breakpoint)
+               -> [(Int, SourceBreakpointInfo)]
+               -> [(Int, SourceBreakpointInfo)]
+    convSrcBps (mod, srcBp, bp) acc = case D.idBreakpoint bp of
+      Nothing -> acc
+      Just no -> (no, SourceBreakpointInfo mod srcBp 0) : acc 
+
+    -- |
+    --
+    takeBp :: (ModuleName, D.SourceBreakpoint, D.Breakpoint) -> D.Breakpoint
+    takeBp (_, _, bp) = bp
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-set-function-breakpoints
+------------------------------------------------------------------------------------------------
 
 -- |
 --
-dapEcho :: String -> InputT GHCi.GHCi Bool
-dapEcho str = do
-  liftIO $ putStrLn $ "[DAP][INFO] dap-echo \"" ++ str ++ "\""
-  return False
+dapSetFunctionBreakpointsCommand :: String -> Gi.GHCi ()
+dapSetFunctionBreakpointsCommand argsStr =
+  withArgs (readDAP argsStr) >>= printDAP
+
+  where
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right args) =  deleteBreakpoints
+                          >> addBreakpoints args
+      
+    -- |
+    --
+    deleteBreakpoints :: Gi.GHCi ()
+    deleteBreakpoints = do
+      bps <- getDelBPs
+      debugL $ "<dapSetFunctionBreakpointsCommand> delete func bps " ++ show bps
+      mapM_ delBreakpoint bps
+      
+    -- |
+    --
+    getDelBPs :: Gi.GHCi [Int]
+    getDelBPs = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let bpNOs = M.keys $ funcBPsDAPContext ctx
+
+      liftIO $ putMVar ctxMVar $ ctx {funcBPsDAPContext = M.fromList []} 
+      return bpNOs
+
+    -- |
+    --
+    addBreakpoints :: D.SetFunctionBreakpointsRequestArguments -> Gi.GHCi (Either String D.SetFunctionBreakpointsResponseBody)
+    addBreakpoints args = do
+      let funcBPs = D.breakpointsSetFunctionBreakpointsRequestArguments args
+
+      addBps <- mapM addBP funcBPs
+
+      updateBpCtx addBps
+
+      return $ Right $ D.SetFunctionBreakpointsResponseBody $ map snd addBps
+    
+    -- |
+    --
+    addBP :: D.FunctionBreakpoint -> Gi.GHCi (D.FunctionBreakpoint, D.Breakpoint)
+    addBP funcBP = do
+      let argStr = D.nameFunctionBreakpoint funcBP
+
+      bp <- addBreakpoint argStr
+
+      return (funcBP, bp)
+
+    -- |
+    --
+    updateBpCtx :: [(D.FunctionBreakpoint, D.Breakpoint)] -> Gi.GHCi ()
+    updateBpCtx bps = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let new = foldr getBpNo [] bps
+
+      liftIO $ putMVar ctxMVar $ ctx{funcBPsDAPContext = M.fromList new}
+
+    -- |
+    --
+    getBpNo :: (D.FunctionBreakpoint, D.Breakpoint)
+            -> [(Int, (D.FunctionBreakpoint, Int))]
+            -> [(Int, (D.FunctionBreakpoint, Int))]
+    getBpNo (funcBP, bp) acc = case D.idBreakpoint bp of
+      Nothing -> acc
+      Just no -> (no, (funcBP, 0)) : acc 
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-set-function-breakpoint-adhoc
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapSetFuncBreakpointCommand :: String -> Gi.GHCi ()
+dapSetFuncBreakpointCommand argsStr =
+  withArgs (readDAP argsStr) >>= printDAP
+
+  where
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right (startup, funcBP)) = getModuleByFile startup >>= \case
+      Left err -> return $ Left err
+      Right modName -> do
+        let funcName = D.nameFunctionBreakpoint funcBP
+            argStr   = modName ++ "." ++ funcName
+
+        bp <- addBreakpoint argStr
+        updateBpCtx (funcBP, bp)
+
+        return $ Right bp
+
+    -- |
+    --
+    updateBpCtx :: (D.FunctionBreakpoint, D.Breakpoint) -> Gi.GHCi ()
+    updateBpCtx (funcBP, bp) = case D.idBreakpoint bp of
+      Nothing -> return ()
+      Just no -> do
+        ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+        ctx <- liftIO $ takeMVar ctxMVar
+        let funcBpMap =  funcBPsDAPContext ctx
+
+        liftIO $ putMVar ctxMVar $ ctx{funcBPsDAPContext = M.insert no (funcBP, 0) funcBpMap}
+
+
+    -- |
+    --
+    getModuleByFile :: String -> Gi.GHCi (Either String String)
+    getModuleByFile srcPath = do
+
+      modSums <- Gi.getLoadedModules
+      let modPaths = map takeModPath modSums
+
+      case filter (isPathMatch srcPath) modPaths of
+        ((m, p):[]) -> do
+          debugL $ "<dapSetFuncBreakpointCommand> " ++ p ++ " -> " ++ m
+          return $ Right m
+        _ -> return $ Left $ "loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+
+      where
+        takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
+        isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-delete-breakpoint-adhoc
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapDeleteBreakpointCommand :: String -> Gi.GHCi ()
+dapDeleteBreakpointCommand argsStr =
+  withArgs (readDAP argsStr) >>= printDAP
+
+  where
+    -- |
+    --
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right bp) = withBpId $ D.idBreakpoint bp
+
+    -- |
+    --
+    withBpId Nothing    = return $ Left $ "breakpoint number not found. " ++ show argsStr
+    withBpId (Just bid) = do
+      delBreakpoint bid
+      updateBpCtx bid
+      return $ Right ()
+      
+    -- |
+    --
+    updateBpCtx :: Int -> Gi.GHCi ()
+    updateBpCtx bid = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let funcBpMap =  funcBPsDAPContext ctx
+
+      liftIO $ putMVar ctxMVar $ ctx{funcBPsDAPContext = M.delete bid funcBpMap}
+
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+delBreakpoint :: Int -> Gi.GHCi Bool
+delBreakpoint bpNoStr = do
+  curSt <- Gi.getGHCiState
+  let curCount = Gi.break_ctr curSt
+
+  Gi.deleteCmd (show bpNoStr)
+  
+  newSt <- Gi.getGHCiState
+  let newCount = Gi.break_ctr newSt
+
+  return (newCount == curCount - 1)
+
+
+-- |
+--
+addBreakpoint :: String -> Gi.GHCi D.Breakpoint
+addBreakpoint argStr = do
+  curSt <- Gi.getGHCiState
+  let curCount = Gi.break_ctr curSt
+
+  Gi.breakCmd argStr
+  
+  newSt <- Gi.getGHCiState
+  let newCount = Gi.break_ctr newSt
+      isAdded = (newCount == curCount + 1)
+      locMay  =  if isAdded then Just (head (Gi.breaks newSt)) else Nothing
+  
+  withBreakLoc locMay
+
+  where
+    withBreakLoc (Just (no, bpLoc))= withSrcSpan no bpLoc (Gi.breakLoc bpLoc)
+    withBreakLoc Nothing = return D.defaultBreakpoint {
+        D.verifiedBreakpoint = False
+      , D.messageBreakpoint  = "set breakpoint seems to be failed."
+      }
+
+    withSrcSpan no bpLoc (G.RealSrcSpan dat) = return
+      D.defaultBreakpoint {
+        D.idBreakpoint        = Just no
+      , D.verifiedBreakpoint  = True
+      , D.sourceBreakpoint    = D.defaultSource {
+          D.nameSource             = (Just . G.moduleNameString . G.moduleName . Gi.breakModule) bpLoc
+        , D.pathSource             = (unpackFS . G.srcSpanFile) dat
+        , D.sourceReferenceSource  = Nothing
+        , D.origineSource          = Nothing
+        }
+      , D.lineBreakpoint      = G.srcSpanStartLine dat
+      , D.columnBreakpoint    = G.srcSpanStartCol dat
+      , D.endLineBreakpoint   = G.srcSpanEndLine dat
+      , D.endColumnBreakpoint = G.srcSpanEndCol dat
+      }
+
+    withSrcSpan _ _ (G.UnhelpfulSpan _) = return D.defaultBreakpoint {
+        D.verifiedBreakpoint = False
+      , D.messageBreakpoint  = "UnhelpfulSpan breakpoint."
+      }
+
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-stacktrace
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapStackTraceCommand :: String -> Gi.GHCi ()
+dapStackTraceCommand argsStr =
+  resetFrameId >> withArgs (readDAP argsStr) >>= printDAP
+  
+  where
+    -- |
+    --
+    resetFrameId = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      liftIO $ putMVar ctxMVar ctx {frameIdDAPContext = 0}
+
+    -- |
+    --
+    withArgs :: Either String D.StackTraceRequestArguments -> Gi.GHCi (Either String D.StackTraceResponseBody)
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right _) = Gi.historyCmdDAP "" >>= \case
+      Left _ -> return $ Left "no stacktrace found."
+      Right (r, hist) -> if isExceptionResume r
+        then goExceptionHdl hist
+        else goBreakHdl r hist
+
+    -- |
+    --
+    goExceptionHdl hist = do
+      traces <- mapM resumeHist2stackFrame hist
+      let traces' = setFrameIdx 0 traces
+
+      return $ Right D.defaultStackTraceResponseBody {
+          D.stackFramesStackTraceResponseBody = traces'
+        , D.totalFramesStackTraceResponseBody = length traces'
+        }
+    
+    -- |
+    --
+    goBreakHdl r hist = do
+      let start  = resume2stackframe r
+      hists <- mapM resumeHist2stackFrame hist      
+      let traces = start : hists
+          traces' = setFrameIdx 0 traces
+
+      return $ Right D.defaultStackTraceResponseBody {
+          D.stackFramesStackTraceResponseBody = traces'
+        , D.totalFramesStackTraceResponseBody = length traces'
+        }
+
+    -- |
+    --
+    setFrameIdx _ [] = []
+    setFrameIdx idx (x:xs) = x{D.idStackFrame = idx} : setFrameIdx (idx+1) xs
+
+    -- |
+    --
+    resume2stackframe r = D.defaultStackFrame {
+        D.idStackFrame = 0
+      , D.nameStackFrame = (getStackFrameTitle r)
+      , D.sourceStackFrame = D.defaultSource {
+          D.pathSource = getSrcPath (G.resumeSpan r)
+        }
+      , D.lineStackFrame = getStartLine (G.resumeSpan r)
+      , D.columnStackFrame = getStartCol (G.resumeSpan r)
+      , D.endLineStackFrame = getEndLine (G.resumeSpan r)
+      , D.endColumnStackFrame = getEndCol (G.resumeSpan r)
+      }
+      
+    -- |
+    --
+    resumeHist2stackFrame hist = do
+      span <- G.getHistorySpan hist
+      return D.defaultStackFrame {
+        D.idStackFrame = 0
+      , D.nameStackFrame = L.intercalate ":" (G.historyEnclosingDecls hist)
+      , D.sourceStackFrame = D.defaultSource {
+          D.pathSource = getSrcPath span
+        }
+      , D.lineStackFrame = getStartLine span
+      , D.columnStackFrame = getStartCol span
+      , D.endLineStackFrame = getEndLine span
+      , D.endColumnStackFrame = getEndCol span
+      }
+    
+    -- |
+    --
+    getStackFrameTitle r =  maybe "unknown" (G.moduleNameString  . G.moduleName . G.breakInfo_module) (G.resumeBreakInfo r)
+                         ++ "."
+                         ++ G.resumeDecl r
+
+    -- |
+    --
+    getSrcPath (G.RealSrcSpan dat) = (unpackFS . G.srcSpanFile) dat
+    getSrcPath (G.UnhelpfulSpan _) = "UnhelpfulSpan"
+
+    -- |
+    --
+    getStartLine (G.RealSrcSpan dat) = G.srcSpanStartLine dat
+    getStartLine (G.UnhelpfulSpan _) = 0
+
+    -- |
+    --
+    getStartCol (G.RealSrcSpan dat) = G.srcSpanStartCol dat
+    getStartCol (G.UnhelpfulSpan _) = 0
+
+    -- |
+    --
+    getEndLine (G.RealSrcSpan dat) = G.srcSpanEndLine dat
+    getEndLine (G.UnhelpfulSpan _) = 0
+
+    -- |
+    --
+    getEndCol (G.RealSrcSpan dat) = G.srcSpanEndCol dat
+    getEndCol (G.UnhelpfulSpan _) = 0
 
 
 ------------------------------------------------------------------------------------------------
@@ -92,8 +560,8 @@ dapEcho str = do
 
 -- |
 --
-dapScopesCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapScopesCommand ctxMVar argsStr = do
+dapScopesCommand :: String -> Gi.GHCi ()
+dapScopesCommand argsStr = do
   res <- withArgs (readDAP argsStr) 
   printDAP res
   
@@ -105,9 +573,10 @@ dapScopesCommand ctxMVar argsStr = do
 
     -- |
     --
-    getScopesResponseBody :: Int -> GHCi.GHCi (Either String D.ScopesResponseBody)
+    getScopesResponseBody :: Int -> Gi.GHCi (Either String D.ScopesResponseBody)
     getScopesResponseBody curIdx = do
       -- liftIO $ putStrLn $ "[DAP][getScopesResponseBody] frame id." ++ frameIdStr
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
       oldIdx <- liftIO $ frameIdDAPContext <$> readMVar ctxMVar
       let moveIdx = curIdx - oldIdx
 
@@ -146,7 +615,7 @@ dapScopesCommand ctxMVar argsStr = do
     -- |
     --
     withMoveIdx moveIdx
-      | 0 == moveIdx = GHC.getBindings
+      | 0 == moveIdx = G.getBindings
       | 0 < moveIdx = back moveIdx
       | otherwise = forward (negate moveIdx)
   
@@ -163,896 +632,25 @@ dapScopesCommand ctxMVar argsStr = do
     -- |
     --
     back num = do
-      (names, _, _, _) <- GHC.back num
-      st <- GHCi.getGHCiState
-      enqueueCommands [GHCi.stop st]
-
+      names <- Gi.backCmdDAP $ show num
       foldM withName [] $ reverse names
 
       
     -- |
     --
     forward num = do
-      (names, _, _, _) <- GHC.forward num
-      st <- GHCi.getGHCiState
-      enqueueCommands [GHCi.stop st]
-
+      names <- Gi.forwardCmdDAP $ show num
       foldM withName [] $ reverse names
            
     -- |
     --
-    enqueueCommands :: [String] -> GHCi.GHCi ()
-    enqueueCommands cmds = do
-      -- make sure we force any exceptions in the commands while we're
-      -- still inside the exception handler, otherwise bad things will
-      -- happen (see #10501)
-      cmds `deepseq` return ()
-      GHCi.modifyGHCiState $ \st -> st{ GHCi.cmdqueue = cmds ++ GHCi.cmdqueue st }
-
-    -- |
-    --
-    withName acc n = GHC.lookupName n >>= \case
+    withName acc n = G.lookupName n >>= \case
       Just ty -> return (ty : acc)
       Nothing ->  do
         dflags <- getDynFlags
         liftIO $ putStrLn $ "[DAP][ERROR][getScopesResponseBody] variable not found. " ++ showSDoc dflags (ppr n)
         return acc
 
-      
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-set-breakpoints
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapSetBreakpointsCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapSetBreakpointsCommand ctxMVar argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-
-  where
-    -- |
-    --
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) = getModule args >>= \case
-      Left msg  -> return $ Left msg
-      Right mod -> do      
-        deleteBreakpoints mod
-      
-        addBreakpoints args mod
-
-
-    -- |
-    --
-    getModule args = do
-      let srcInfo = D.sourceSetBreakpointsRequestArguments args
-          srcPath = D.pathSource srcInfo
-
-      modSums <- GHCi.getLoadedModules
-      let modPaths = map takeModPath modSums
-
-      case filter (isPathMatch srcPath) modPaths of
-        ((m, p):[]) -> do
-          liftIO $ putStrLn $ "[DAP][INFO][dapSetBreakpointsCommand] " ++ p ++ " -> " ++ m
-          return $ Right m
-        _ -> return $ Left $ "[DAP][ERROR] loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
-
-
-    -- |
-    --
-    deleteBreakpoints :: ModuleName -> GHCi.GHCi ()
-    deleteBreakpoints mod = do
-      bps <- liftIO $ getDelBPs mod
-
-      liftIO $ putStrLn $ "[DAP][INFO][dapSetBreakpointsCommand] delete src bps " ++ show bps
-
-      mapM_ delBreakpoint bps
-
-    -- |
-    --
-    getDelBPs :: ModuleName -> IO [Int]
-    getDelBPs mod = do
-      ctx <- takeMVar ctxMVar
-
-      let bpNOs = M.keys $ M.filter ((isModuleMatch mod)) $ srcBPsDAPContext ctx
-          newSrcBPs = M.filter (not . (isModuleMatch mod)) $ srcBPsDAPContext ctx
-
-      putMVar ctxMVar $ ctx {srcBPsDAPContext = newSrcBPs} 
-
-      return bpNOs
-
-    -- |
-    --
-    isModuleMatch :: ModuleName -> SourceBreakpointInfo -> Bool
-    isModuleMatch mod bpInfo = mod == modNameSourceBreakpointInfo bpInfo
-
-
-    -- |
-    --
-    takeModPath ms = (GHC.moduleNameString (GHC.ms_mod_name ms), GHC.ms_hspp_file ms)
-
-    -- |
-    --
-    isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
-
-    -- |
-    --
-    addBreakpoints :: D.SetBreakpointsRequestArguments -> ModuleName -> GHCi.GHCi (Either String D.SetBreakpointsResponseBody)
-    addBreakpoints args mod = do
-      let srcBPs = D.breakpointsSetBreakpointsRequestArguments args
-
-      addBps <- mapM (addBP mod) srcBPs
-
-      liftIO $ updateBpCtx addBps
-
-      return $ Right $ D.SetBreakpointsResponseBody $ map takeBp addBps
-    
-    -- |
-    --
-    addBP :: String -> D.SourceBreakpoint -> GHCi.GHCi (ModuleName, D.SourceBreakpoint, D.Breakpoint)
-    addBP mod srcBP = do
-      let lineNo   = show $ D.lineSourceBreakpoint srcBP
-          colNo    = getColNo $ D.columnSourceBreakpoint srcBP
-          argStr   = mod ++ " " ++ lineNo ++ " " ++ colNo
-
-      bp <- addBreakpoint argStr
-
-      return (mod, srcBP, bp)
-
-    -- |
-    --
-    getColNo :: Maybe Int -> String
-    getColNo Nothing = ""
-    getColNo (Just 1) = ""
-    getColNo (Just a) = show a
-
-    -- |
-    --
-    updateBpCtx :: [(ModuleName, D.SourceBreakpoint, D.Breakpoint)] -> IO ()
-    updateBpCtx bps = do
-      ctx <- takeMVar ctxMVar
-      let cur = srcBPsDAPContext ctx
-          new = M.fromList $ foldr convSrcBps [] bps
-      putMVar ctxMVar $ ctx{srcBPsDAPContext = (M.union cur new)}
-
-    -- |
-    --
-    convSrcBps :: (ModuleName, D.SourceBreakpoint, D.Breakpoint)
-               -> [(Int, SourceBreakpointInfo)]
-               -> [(Int, SourceBreakpointInfo)]
-    convSrcBps (mod, srcBp, bp) acc = case D.idBreakpoint bp of
-      Nothing -> acc
-      Just no -> (no, SourceBreakpointInfo mod srcBp 0) : acc 
-
-    -- |
-    --
-    takeBp :: (ModuleName, D.SourceBreakpoint, D.Breakpoint) -> D.Breakpoint
-    takeBp (_, _, bp) = bp
-
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-set-function-breakpoints
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapSetFunctionBreakpointsCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapSetFunctionBreakpointsCommand ctxMVar argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-
-  where
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) =  deleteBreakpoints
-                          >> addBreakpoints args
-      
-    -- |
-    --
-    deleteBreakpoints :: GHCi.GHCi ()
-    deleteBreakpoints = do
-      bps <- liftIO $ getDelBPs
-
-      liftIO $ putStrLn $ "[DAP][INFO][dapSetFunctionBreakpointsCommand] delete func bps " ++ show bps
-
-      mapM_ delBreakpoint bps
-      
-    -- |
-    --
-    getDelBPs :: IO [Int]
-    getDelBPs = do
-      ctx <- takeMVar ctxMVar
-
-      let bpNOs = M.keys $ funcBPsDAPContext ctx
-
-      putMVar ctxMVar $ ctx {funcBPsDAPContext = M.fromList []} 
-
-      return bpNOs
-
-    -- |
-    --
-    addBreakpoints :: D.SetFunctionBreakpointsRequestArguments -> GHCi.GHCi (Either String D.SetFunctionBreakpointsResponseBody)
-    addBreakpoints args = do
-      let funcBPs = D.breakpointsSetFunctionBreakpointsRequestArguments args
-
-      addBps <- mapM addBP funcBPs
-
-      liftIO $ updateBpCtx addBps
-
-      return $ Right $ D.SetFunctionBreakpointsResponseBody $ map snd addBps
-    
-    -- |
-    --
-    addBP :: D.FunctionBreakpoint -> GHCi.GHCi (D.FunctionBreakpoint, D.Breakpoint)
-    addBP funcBP = do
-      let argStr = D.nameFunctionBreakpoint funcBP
-
-      bp <- addBreakpoint argStr
-
-      return (funcBP, bp)
-
-    -- |
-    --
-    updateBpCtx :: [(D.FunctionBreakpoint, D.Breakpoint)] -> IO ()
-    updateBpCtx bps = do
-      ctx <- takeMVar ctxMVar
-      let new = foldr getBpNo [] bps
-
-      putMVar ctxMVar $ ctx{funcBPsDAPContext = M.fromList new}
-
-    -- |
-    --
-    getBpNo :: (D.FunctionBreakpoint, D.Breakpoint)
-            -> [(Int, (D.FunctionBreakpoint, Int))]
-            -> [(Int, (D.FunctionBreakpoint, Int))]
-    getBpNo (funcBP, bp) acc = case D.idBreakpoint bp of
-      Nothing -> acc
-      Just no -> (no, (funcBP, 0)) : acc 
-
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-set-function-breakpoint-adhoc
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapSetFuncBreakpointCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapSetFuncBreakpointCommand ctxMVar argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-
-  where
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right (startup, funcBP)) = getModuleByFile startup >>= \case
-      Left err -> return $ Left err
-      Right modName -> do
-        let funcName = D.nameFunctionBreakpoint funcBP
-            argStr   = modName ++ "." ++ funcName
-
-        bp <- addBreakpoint argStr
-        liftIO $ updateBpCtx (funcBP, bp)
-
-        return $ Right bp
-    {-
-    -- |
-    --
-    addBP :: (String, D.FunctionBreakpoint) -> GHCi.GHCi (D.FunctionBreakpoint, D.Breakpoint)
-    addBP (startup, funcBP) = getModuleByFile startup >>= withMod funcBP
-
-    withMod funcBP (Right modName) = do
-      let funcName = D.nameFunctionBreakpoint funcBP
-          argStr   = modName ++ "." ++ funcName
-
-      bp <- addBreakpoint argStr
-      
-      return (funcBP, bp)
--}
-    -- |
-    --
-    updateBpCtx :: (D.FunctionBreakpoint, D.Breakpoint) -> IO ()
-    updateBpCtx (funcBP, bp) = case D.idBreakpoint bp of
-      Nothing -> return ()
-      Just no -> do
-        ctx <- takeMVar ctxMVar
-        let funcBpMap =  funcBPsDAPContext ctx
-
-        putMVar ctxMVar $ ctx{funcBPsDAPContext = M.insert no (funcBP, 0) funcBpMap}
-
-
--- |
---
-getModuleByFile :: String -> GHCi.GHCi (Either String String)
-getModuleByFile srcPath = do
-
-  modSums <- GHCi.getLoadedModules
-  let modPaths = map takeModPath modSums
-
-  case filter (isPathMatch srcPath) modPaths of
-    ((m, _):[]) -> do
-      -- liftIO $ putStrLn $ "[DAP][INFO][dapSetBreakpointsCommand] " ++ p ++ " -> " ++ m
-      return $ Right m
-    _ -> return $ Left $ "[DAP][ERROR] loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
-
-  where
-    takeModPath ms = (GHC.moduleNameString (GHC.ms_mod_name ms), GHC.ms_hspp_file ms)
-    isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-delete-breakpoint-adhoc
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapDeleteBreakpointCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapDeleteBreakpointCommand ctxMVar argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-
-  where
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right bp) = withBpId $ D.idBreakpoint bp
-
-    withBpId Nothing    = return $ Left $ "[DAP][ERROR] breakpoint number not found. " ++ show argsStr
-    withBpId (Just bid) = do
-      delBreakpoint bid
-      liftIO $ updateBpCtx bid
-      return $ Right ()
-      
-    -- |
-    --
-    updateBpCtx :: Int -> IO ()
-    updateBpCtx bid = do
-      ctx <- takeMVar ctxMVar
-      let funcBpMap =  funcBPsDAPContext ctx
-
-      putMVar ctxMVar $ ctx{funcBPsDAPContext = M.delete bid funcBpMap}
-
-------------------------------------------------------------------------------------------------
-
--- |
---
-delBreakpoint :: Int -> GHCi.GHCi Bool
-delBreakpoint bpNoStr = do
-  curSt <- GHCi.getGHCiState
-  let curCount = GHCi.break_ctr curSt
-
-  -- liftIO $ putStrLn $ "[DAP][INFO] before func breaks : " ++ show curCount
-  GHCi.deleteCmd (show bpNoStr)
-  
-  newSt <- GHCi.getGHCiState
-  let newCount = GHCi.break_ctr newSt
-  -- liftIO $ putStrLn $ "[DAP][INFO] after func breaks : " ++ show newCount
-  
-  -- TODO; GHCi.break_ctr is not changed.
-  return (newCount == curCount - 1)
-
-
--- |
---
-addBreakpoint :: String -> GHCi.GHCi D.Breakpoint
-addBreakpoint argStr = do
-  curSt <- GHCi.getGHCiState
-  let curCount = GHCi.break_ctr curSt
-
-  GHCi.breakCmd argStr
-  
-  newSt <- GHCi.getGHCiState
-  let newCount = GHCi.break_ctr newSt
-      isAdded = (newCount == curCount + 1)
-      locMay  =  if isAdded then Just (head (GHCi.breaks newSt)) else Nothing
-  
-  withBreakLoc locMay
-
-  where
-    withBreakLoc (Just (no, bpLoc))= withSrcSpan no bpLoc (GHCi.breakLoc bpLoc)
-    withBreakLoc Nothing = return D.defaultBreakpoint {
-        D.verifiedBreakpoint = False
-      , D.messageBreakpoint  = "[DAP][ERROR]set breakpoint seems to be failed."
-      }
-
-    withSrcSpan no bpLoc (GHC.RealSrcSpan dat) = return
-      D.defaultBreakpoint {
-        D.idBreakpoint        = Just no
-      , D.verifiedBreakpoint  = True
-      , D.sourceBreakpoint    = D.defaultSource {
-          D.nameSource             = (Just . GHC.moduleNameString . GHC.moduleName . GHCi.breakModule) bpLoc
-        , D.pathSource             = (unpackFS . GHC.srcSpanFile) dat
-        , D.sourceReferenceSource  = Nothing
-        , D.origineSource          = Nothing
-        }
-      , D.lineBreakpoint      = GHC.srcSpanStartLine dat
-      , D.columnBreakpoint    = GHC.srcSpanStartCol dat
-      , D.endLineBreakpoint   = GHC.srcSpanEndLine dat
-      , D.endColumnBreakpoint = GHC.srcSpanEndCol dat
-      }
-
-    withSrcSpan _ _ (GHC.UnhelpfulSpan _) = return D.defaultBreakpoint {
-        D.verifiedBreakpoint = False
-      , D.messageBreakpoint  = "[DAP][ERROR] UnhelpfulSpan breakpoint."
-      }
-
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-continue
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapContinueCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapContinueCommand mvarCtx argsStr =   withArgs (readDAP argsStr) 
-                                   >>= withStopResult
-
-  where
-  
-    -- |
-    --
-    withArgs :: Either String D.ContinueRequestArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) = case  D.exprContinueRequestArguments args of
-      Just expr -> runWithStmtTrace expr
-      Nothing   -> runNoStmtTrace
-
-
-    -- |
-    --
-    runWithStmtTrace expr = do
-      clearTmpDAPContext
-
-      GHCi.traceCmd expr
-
-      ctx <- liftIO $ readMVar mvarCtx
-      withStmtTraceResults $ traceCmdExecResultDAPContext ctx
-
-
-    -- |
-    --
-    withStmtTraceResults [] = return $ Left $ "[DAP][ERROR] invalid trace arg result."
-    withStmtTraceResults (res:[]) = withStmtTraceResult res
-    withStmtTraceResults (res:_) = do
-      liftIO $ putStrLn $ "[DAP][WARN] two or more trace arg results. use first result. "
-      withStmtTraceResult res
-    
-
-    -- |
-    --
-    withStmtTraceResult (Just res) = withExecResult mvarCtx "breakpoint" res
-    withStmtTraceResult Nothing = do
-      -- runStmt expr error occurred.
-      msg <- getRunStmtSourceError
-      return $ Left $ msg
-
-
-    -- |
-    --
-    runNoStmtTrace = do
-      clearTmpDAPContext
-
-      GHCi.traceCmd ""
-
-      ctx <- liftIO $ readMVar mvarCtx
-      withNoStmtTraceResults $ doContinueExecResultDAPContext ctx
-
-
-    -- |
-    --
-    withNoStmtTraceResults [] = return $ Left $ "[DAP][ERROR] invalid trace no arg result."
-    withNoStmtTraceResults (res:[]) = withExecResult mvarCtx "breakpoint" res
-    withNoStmtTraceResults (res:_) = do
-      liftIO $ putStrLn $ "[DAP][WARN] two or more trace no arg results. use first result. "
-      withExecResult mvarCtx "breakpoint" res
-
-
-    -- |
-    --
-    withStopResult :: Either String D.StoppedEventBody -> GHCi.GHCi ()
-    withStopResult res@(Right D.StoppedEventBody{D.reasonStoppedEventBody = "breakpoint"}) = breakthrough res
-    withStopResult res = printDAP res
-
-
-    -- |
-    --
-    breakthrough :: Either String D.StoppedEventBody -> GHCi.GHCi ()
-    breakthrough res = isBreakthrough >>= \case
-      False -> printDAP res
-      True  -> runNoStmtTrace >>= withStopResult
-
-
-    -- |
-    --
-    isBreakthrough :: GHCi.GHCi Bool
-    isBreakthrough = GHC.getResumeContext >>= withResumes
-
-    -- |
-    --   @return
-    --    True  -> thruough
-    --    False -> break
-    --
-    withResumes :: [GHC.Resume] -> GHCi.GHCi Bool
-    withResumes [] = do
-      liftIO $ putStrLn "[DAP][WARN] invalid resume state."
-      return False
-
-    withResumes (r:_) =   pure (GHC.resumeBreakInfo r)
-                      >>= GHCi.toBreakIdAndLocation
-                      >>= withBreakInfo
-
-    -- |
-    --   @return
-    --    True  -> thruough
-    --    False -> break
-    --
-    withBreakInfo ::  Maybe (Int, GHCi.BreakLocation) -> GHCi.GHCi Bool
-    withBreakInfo Nothing = do
-      liftIO $ putStrLn "[DAP][WARN] invalid resume break info state."
-      return False
-
-    withBreakInfo (Just (no, _)) = findSrcBP no >>= \case
-      Just srcBP -> withSrcBP no srcBP
-      Nothing    -> findFuncBP no >>= \case
-        Just fncBP -> withFuncBP no fncBP
-        Nothing    -> do
-          liftIO $ putStrLn $ "[DAP][WARN] invalid break no. " ++ show no
-          return False
-
-    -- |
-    --
-    findSrcBP no = do
-      srcBPs <- liftIO $ srcBPsDAPContext <$> readMVar mvarCtx
-      return $ M.lookup no srcBPs
-
-    -- |
-    --
-    findFuncBP no = do
-      funcBPs <- liftIO $ funcBPsDAPContext <$> readMVar mvarCtx
-      return $ M.lookup no funcBPs
-
-    -- |
-    --   @return
-    --    True  -> thruough
-    --    False -> break
-    --
-    withSrcBP :: Int -> SourceBreakpointInfo -> GHCi.GHCi Bool
-    withSrcBP no bpInfo = 
-      let bpCond = D.conditionSourceBreakpoint (srcBPSourceBreakpointInfo bpInfo)
-          bpLog  = D.logMessageSourceBreakpoint (srcBPSourceBreakpointInfo bpInfo)
-      in
-        srcBreakthroughCounterHandler no bpInfo >>= \case
-          Just res -> return res
-          Nothing -> breakthroughCondtionHandler no bpCond >>= \case
-            Just res -> return res
-            Nothing -> logPointHandler no bpLog >>= \case
-              Just res -> return res
-              Nothing  -> return False
-
-
-    -- |
-    --   @return
-    --    True  -> thruough
-    --    False -> break
-    --
-    withFuncBP no bpInfo = 
-      let bpCond = D.conditionFunctionBreakpoint (fst bpInfo)
-      in
-        funcBreakthroughCounterHandler no bpInfo >>= \case
-          Just res -> return res
-          Nothing -> breakthroughCondtionHandler no bpCond >>= \case
-            Just res -> return res
-            Nothing  -> return False
-
-    -- |
-    --
-    srcBreakthroughCounterHandler :: Int -> SourceBreakpointInfo -> GHCi.GHCi (Maybe Bool)
-    srcBreakthroughCounterHandler _ SourceBreakpointInfo {
-                                      srcBPSourceBreakpointInfo = D.SourceBreakpoint {
-                                        D.hitConditionSourceBreakpoint = Nothing
-                                      }
-                                    } = return Nothing
-    srcBreakthroughCounterHandler no bpInfo@SourceBreakpointInfo {
-                                              srcBPSourceBreakpointInfo = D.SourceBreakpoint {
-                                                  D.hitConditionSourceBreakpoint = Just condStr
-                                              }
-                                            , hitCntSourceBreakpointInfo = curCnt} = do
-      let newCnt = curCnt + 1
-          stmt   = if L.isInfixOf "_CNT" condStr 
-                     then "let _CNT = " ++ show newCnt ++ " in " ++ condStr
-                     else "let _CNT = " ++ show newCnt ++ " in _CNT " ++ condStr
-
-      liftIO $ updateSrcBreakCounter no bpInfo{hitCntSourceBreakpointInfo = newCnt}
-
-      runStmtDAP mvarCtx False stmt >>= \case
-        Left  err -> do
-          liftIO $ putStrLn $ "[DAP][ERROR] hit condition statement fail. " ++ stmt ++ " -> " ++ err
-          return $ Just False
-        Right res -> do
-          liftIO $ putStrLn $ "[DAP][INFO] hit condition statement result. " ++ stmt ++ " -> " ++ show res
-          return $ Just ("False" == D.resultEvaluateResponseBody res)
-
-    -- |
-    --
-    updateSrcBreakCounter no bpInfo = do
-      ctx <- takeMVar mvarCtx
-      let cur = srcBPsDAPContext ctx
-          new = M.insert no bpInfo cur
-      putMVar mvarCtx ctx{srcBPsDAPContext = new}
-
-
-    -- |
-    --
-    funcBreakthroughCounterHandler :: Int -> (D.FunctionBreakpoint, Int) -> GHCi.GHCi (Maybe Bool)
-    funcBreakthroughCounterHandler _ (D.FunctionBreakpoint{D.hitConditionFunctionBreakpoint = Nothing}, _) = return Nothing
-    funcBreakthroughCounterHandler no info@(D.FunctionBreakpoint{D.hitConditionFunctionBreakpoint = Just condStr}, curCnt) = do
-      let newCnt = curCnt + 1
-          stmt   = if L.isInfixOf "_CNT" condStr 
-            then "let _CNT = " ++ show newCnt ++ " in " ++ condStr
-            else "let _CNT = " ++ show newCnt ++ " in _CNT " ++ condStr
-
-      liftIO $ updateFuncBreakCounter no (fst info, newCnt)
-
-      runStmtDAP mvarCtx False stmt >>= \case
-        Left  err -> do
-          liftIO $ putStrLn $ "[DAP][ERROR] hit condition statement fail. " ++ stmt ++ " -> " ++ err
-          return $ Just False
-        Right res -> do
-          when ("Bool" /= D.typeEvaluateResponseBody res) $
-            liftIO $ putStrLn $ "[DAP][INFO] hit condition statement result type is not Bool. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ show res
-          return $ Just ("False" == D.resultEvaluateResponseBody res)
-
-
-    -- |
-    --
-    updateFuncBreakCounter no bpInfo = do
-      ctx <- takeMVar mvarCtx
-      let cur = funcBPsDAPContext ctx
-          new = M.insert no bpInfo cur
-      putMVar mvarCtx ctx{funcBPsDAPContext = new}
-
-    -- |
-    --   @return
-    --     True  -> breakthrough
-    --     False -> break
-    --
-    breakthroughCondtionHandler :: Int -> Maybe String -> GHCi.GHCi (Maybe Bool)
-    breakthroughCondtionHandler _ Nothing = return Nothing
-    breakthroughCondtionHandler no (Just stmt) = runStmtDAP mvarCtx False stmt >>= \case
-      Left  err -> do
-        liftIO $ putStrLn $ "[DAP][ERROR] condition statement fail. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ err
-        return $ Just False
-      Right res -> do
-        when ("Bool" /= D.typeEvaluateResponseBody res) $
-          liftIO $ putStrLn $ "[DAP][ERROR] condition statement result type is not Bool. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ show res
-        return $ Just ("False" == D.resultEvaluateResponseBody res)
-
-    -- |
-    --   @return
-    --     must be True -> breakthrough
-    -- 
-    logPointHandler :: Int -> Maybe String -> GHCi.GHCi (Maybe Bool)
-    logPointHandler _ Nothing = return Nothing
-    logPointHandler no (Just stmt) = do
-      runStmtDAP mvarCtx False stmt >>= \case
-        Left err -> do
-          let msg = "[DAP][ERROR] logpoint evaluate statement error at BPNO:" ++ show no ++ " error:" ++ err
-              body = D.defaultOutputEventBody { D.outputOutputEventBody = msg
-                                              , D.categoryOutputEventBody = "stderr" }
-          printOutputEventDAP (Right body)
-          return $ Just False
-
-        Right res -> do
-          let msg = D.resultEvaluateResponseBody res ++ "\n"
-              body = D.defaultOutputEventBody { D.outputOutputEventBody = msg
-                                              , D.categoryOutputEventBody = "console"}
-
-          printOutputEventDAP (Right body)
-          return $ Just True
-
-
--- |
---
-withExecResult :: MVar DAPContext -> String-> GHC.ExecResult -> GHCi.GHCi (Either String D.StoppedEventBody)
-withExecResult _ _ (GHC.ExecComplete { GHC.execResult = Right _ }) = do
-  return $  Right D.defaultStoppedEventBody {
-              D.reasonStoppedEventBody = "complete"
-            }
-  
-withExecResult _ _ (GHC.ExecComplete { GHC.execResult = Left (SomeException e)}) = do
-  return $  Right D.defaultStoppedEventBody {
-              D.reasonStoppedEventBody = "complete"
-            , D.descriptionStoppedEventBody = show e
-            , D.textStoppedEventBody = show e
-            }
-
-withExecResult _ reason (GHC.ExecBreak{GHC.breakInfo = Just (BreakInfo _ _)}) = do
-  -- liftIO $ putStrLn $ "[DAP][DEBUG] " ++ GHC.moduleNameString (GHC.moduleName m)
-  -- liftIO $ putStrLn $ "[DAP][DEBUG] " ++ show n
-  return $  Right D.defaultStoppedEventBody {
-              D.reasonStoppedEventBody = reason
-            }
-
-withExecResult mvarCtx _ (GHC.ExecBreak{GHC.breakInfo = Nothing}) = do
-  let key = "_exception"
-  --runStmtDAP mvarCtx False key >>= \case
-  gcatch (GHC.parseName key) parseNameErrorHandler >>= names2EvalBody mvarCtx False key >>= \case
-    Left  msg  -> return $ Left $ "[DAP][ERROR] invalid _exception result." ++ msg
-    Right body -> return $ Right D.defaultStoppedEventBody {
-        D.reasonStoppedEventBody = "exception"
-      , D.descriptionStoppedEventBody = D.resultEvaluateResponseBody body
-      , D.textStoppedEventBody = D.resultEvaluateResponseBody body
-      }
-
-{-do
-  evalBody <- getEvalBody "_exception" True
-  return $   Right D.defaultStoppedEventBody {
-              D.reasonStoppedEventBody = "exception"
-            , D.descriptionStoppedEventBody = D.resultEvaluateResponseBody evalBody
-            , D.textStoppedEventBody = D.resultEvaluateResponseBody evalBody
-            }
-            -}
-
-
-
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-next
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapNextCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapNextCommand mvarCtx argsStr = do
-  res <- withArgs (readDAP argsStr)
-  printDAP res
-
-  where
-    withArgs :: Either String D.NextRequestArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right _) = do
-      clearTmpDAPContext
-
-      GHCi.stepLocalCmd ""
-
-      ctx <- liftIO $ readMVar mvarCtx
-      withResults $ doContinueExecResultDAPContext ctx
-
-
-    -- |
-    --
-    withResults [] = return $ Left $ "[DAP][ERROR] invalid stepLocalCmd result."
-    withResults (res:[]) = withExecResult mvarCtx "step" res
-    withResults (res:_) = do
-      liftIO $ putStrLn $ "[DAP][WARN] two or more stepLocalCmd results. use first result. "
-      withExecResult mvarCtx "step" res
-
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-step-in
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapStepInCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapStepInCommand mvarCtx argsStr = do
-  res <- withArgs (readDAP argsStr)
-  printDAP res
-  
-  where
-    withArgs :: Either String D.StepInRequestArguments -> GHCi.GHCi (Either String D.StoppedEventBody)
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right _) = do
-      clearTmpDAPContext
-
-      GHCi.stepCmd ""
-
-      ctx <- liftIO $ readMVar mvarCtx
-      withResults $ doContinueExecResultDAPContext ctx
-
-
-    -- |
-    --
-    withResults [] = return $ Left $ "[DAP][ERROR] invalid stepCmd result."
-    withResults (res:[]) = withExecResult mvarCtx "step" res
-    withResults (res:_) = do
-      liftIO $ putStrLn $ "[DAP][WARN] two or more stepCmd results. use first result. "
-      withExecResult mvarCtx "step" res
-
-
-------------------------------------------------------------------------------------------------
---  DAP Command :dap-stacktrace
-------------------------------------------------------------------------------------------------
-
--- |
---
-dapStackTraceCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapStackTraceCommand ctxMVar argsStr = do
-  
-  ctx <- liftIO $ takeMVar ctxMVar
-  liftIO $ putMVar ctxMVar ctx {frameIdDAPContext = 0}
-
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-  
-  where
-    withArgs :: Either String D.StackTraceRequestArguments -> GHCi.GHCi (Either String D.StackTraceResponseBody)
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right _) = GHC.getResumeContext >>= \case
-      [] -> return $ Left "no stacktrace found."
-      (r:_) -> withResume r
-
-    withResume r = case isExceptionResume r of
-      True -> do
-        dflags <- GHCi.getDynFlags
-        let maxSize = GHC.ghciHistSize dflags
-            hist    = GHC.resumeHistory r
-
-        traces <- mapM resumeHist2stackFrame $ take maxSize hist
-         
-        let traces' = setFrameIdx 0 traces
-
-        return $ Right D.defaultStackTraceResponseBody {
-            D.stackFramesStackTraceResponseBody = traces'
-          , D.totalFramesStackTraceResponseBody = length traces
-          }
-      False -> do
-        dflags <- GHCi.getDynFlags
-        let start  = resume2stackframe r
-            maxSize = (GHC.ghciHistSize dflags) - 1
-            hist    = GHC.resumeHistory r
-
-        hists <- mapM resumeHist2stackFrame $ take maxSize hist
-        
-        let traces = start : hists
-            traces' = setFrameIdx 0 traces
-
-        return $ Right D.defaultStackTraceResponseBody {
-            D.stackFramesStackTraceResponseBody = traces'
-          , D.totalFramesStackTraceResponseBody = length traces
-          }
-
-    resume2stackframe r = D.defaultStackFrame {
-        D.idStackFrame = 0
-      , D.nameStackFrame = (getStackFrameTitle r)
-      , D.sourceStackFrame = D.defaultSource {
-          D.pathSource = getSrcPath (GHC.resumeSpan r)
-        }
-      , D.lineStackFrame = getStartLinet (GHC.resumeSpan r)
-      , D.columnStackFrame = getStartCol (GHC.resumeSpan r)
-      , D.endLineStackFrame = getEndLinet (GHC.resumeSpan r)
-      , D.endColumnStackFrame = getEndCol (GHC.resumeSpan r)
-      }
-      
-    getStackFrameTitle r =  maybe "unknown" (GHC.moduleNameString  . GHC.moduleName . GHC.breakInfo_module) (GHC.resumeBreakInfo r)
-                         ++ "."
-                         ++ GHC.resumeDecl r
-
-    getSrcPath (GHC.RealSrcSpan dat) = (unpackFS . GHC.srcSpanFile) dat
-    getSrcPath (GHC.UnhelpfulSpan _) = "UnhelpfulSpan"
-
-    getStartLinet (GHC.RealSrcSpan dat) = GHC.srcSpanStartLine dat
-    getStartLinet (GHC.UnhelpfulSpan _) = 0
-
-    getStartCol (GHC.RealSrcSpan dat) = GHC.srcSpanStartCol dat
-    getStartCol (GHC.UnhelpfulSpan _) = 0
-
-    getEndLinet (GHC.RealSrcSpan dat) = GHC.srcSpanEndLine dat
-    getEndLinet (GHC.UnhelpfulSpan _) = 0
-
-    getEndCol (GHC.RealSrcSpan dat) = GHC.srcSpanEndCol dat
-    getEndCol (GHC.UnhelpfulSpan _) = 0
-
-    resumeHist2stackFrame hist = do
-      span <- GHC.getHistorySpan hist
-      return D.defaultStackFrame {
-        D.idStackFrame = 0
-      , D.nameStackFrame = L.intercalate ":" (GHC.historyEnclosingDecls hist)
-      , D.sourceStackFrame = D.defaultSource {
-          D.pathSource = getSrcPath span
-        }
-      , D.lineStackFrame = getStartLinet span
-      , D.columnStackFrame = getStartCol span
-      , D.endLineStackFrame = getEndLinet span
-      , D.endColumnStackFrame = getEndCol span
-      }
-    
-    setFrameIdx _ [] = []
-    setFrameIdx idx (x:xs) = x{D.idStackFrame = idx} : setFrameIdx (idx+1) xs
 
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-variables
@@ -1060,18 +658,18 @@ dapStackTraceCommand ctxMVar argsStr = do
 
 -- |
 --
-dapVariablesCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapVariablesCommand ctxMVar argsStr = do
+dapVariablesCommand :: String -> Gi.GHCi ()
+dapVariablesCommand argsStr = do
   res <- withArgs (readDAP argsStr) 
   printDAP res
 
   where
-    withArgs :: Either String D.VariablesRequestArguments -> GHCi.GHCi (Either String D.VariablesResponseBody)
+    withArgs :: Either String D.VariablesRequestArguments -> Gi.GHCi (Either String D.VariablesResponseBody)
     withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
     withArgs (Right args) = do
       let idx  = D.variablesReferenceVariablesRequestArguments args
 
-      vals <- getBindingVariables ctxMVar idx
+      vals <- getBindingVariables idx
 
       return $ Right $ D.VariablesResponseBody $  L.sortBy compName vals
 
@@ -1079,33 +677,35 @@ dapVariablesCommand ctxMVar argsStr = do
 
 -- |
 --
-getBindingVariables :: MVar DAPContext -> Int -> GHCi.GHCi [D.Variable]
-getBindingVariables ctx idx
-  | 1 == idx = getBindingVariablesLocal ctx 
-  | 2 == idx = getBindingVariablesGlobal ctx 
-  | otherwise  = getBindingVariablesNode ctx idx
+getBindingVariables :: Int -> Gi.GHCi [D.Variable]
+getBindingVariables idx
+  | 1 == idx = getBindingVariablesLocal
+  | 2 == idx = getBindingVariablesGlobal
+  | otherwise  = getBindingVariablesNode idx
 
 
 -- |
 --
-getBindingVariablesLocal :: MVar DAPContext -> GHCi.GHCi [D.Variable]
-getBindingVariablesLocal ctxMVar = do
+getBindingVariablesLocal :: Gi.GHCi [D.Variable]
+getBindingVariablesLocal = do
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   bindings <- liftIO $ bindingDAPContext <$> readMVar ctxMVar
-  getBindingVariablesRoot  ctxMVar bindings
+  getBindingVariablesRoot bindings
 
 
 -- |
 --
-getBindingVariablesGlobal :: MVar DAPContext -> GHCi.GHCi [D.Variable]
-getBindingVariablesGlobal ctxMVar = do
+getBindingVariablesGlobal :: Gi.GHCi [D.Variable]
+getBindingVariablesGlobal = do
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   bindings <- liftIO $ bindingGlobalDAPContext <$> readMVar ctxMVar
-  getBindingVariablesRoot  ctxMVar bindings
+  getBindingVariablesRoot bindings
   
 
 -- |
 --
-getBindingVariablesRoot :: MVar DAPContext -> [GHC.TyThing] -> GHCi.GHCi [D.Variable]
-getBindingVariablesRoot ctxMVar bindings = do
+getBindingVariablesRoot :: [G.TyThing] -> Gi.GHCi [D.Variable]
+getBindingVariablesRoot bindings = do
   -- bindings <- liftIO $ bindingDAPContext <$> readMVar ctxMVar
   -- liftIO $ putStrLn $ "[DAP][INFO] bindings " ++ show (length bindings)
 
@@ -1117,7 +717,7 @@ getBindingVariablesRoot ctxMVar bindings = do
     doSomething acc ty = do
       v <- tyThing2Val ty
       return (v:acc)
-    onError :: [D.Variable] -> SomeException -> GHCi.GHCi [D.Variable]
+    onError :: [D.Variable] -> SomeException -> Gi.GHCi [D.Variable]
     onError acc e = do
       liftIO $ putStrLn $ "[DAP][DEBUG] ERROR: " ++ (show e)
       return acc
@@ -1125,12 +725,19 @@ getBindingVariablesRoot ctxMVar bindings = do
     -- |
     --  TyThings https://hackage.haskell.org/package/ghc-8.2.1/docs/HscTypes.html#t:TyThing
     --
-    tyThing2Val :: GHC.TyThing -> GHCi.GHCi D.Variable
+    tyThing2Val :: G.TyThing -> Gi.GHCi D.Variable
     tyThing2Val (AnId i) = do
-      let isForce = True
-          depth   = _BINDING_INSPECT_DEPTH
-          
-      GHC.obtainTermFromId depth isForce i >>= withTerm i
+      dflags <- getDynFlags
+      let nameStr = showSDoc dflags (ppr i)
+      if "_result" == nameStr
+        then do
+          -- liftIO $ putStrLn $ "xxxxxxxxxx _result"
+          withId i
+        else do
+          let isForce = True
+              depth   = _BINDING_INSPECT_DEPTH
+              
+          G.obtainTermFromId depth isForce i >>= withTerm i
    
     tyThing2Val t@(ATyCon c) = do
       dflags <- getDynFlags
@@ -1165,7 +772,7 @@ getBindingVariablesRoot ctxMVar bindings = do
     -- |
     --  Term https://hackage.haskell.org/package/ghc-8.2.1/docs/RtClosureInspect.html
     --
-    withTerm ::  GHC.Id -> Term -> GHCi.GHCi D.Variable
+    withTerm ::  G.Id -> Term -> Gi.GHCi D.Variable
     withTerm i t@(Term ty _ _ _) = do
       dflags <- getDynFlags
       termSDoc <- gcatch (showTerm t) showTermErrorHandler
@@ -1173,7 +780,7 @@ getBindingVariablesRoot ctxMVar bindings = do
           typeStr = showSDoc dflags (pprTypeForUser ty)
           valStr  = showSDoc dflags termSDoc
 
-      nextIdx <- getNextIdx ctxMVar t nameStr
+      nextIdx <- getNextIdx t nameStr
       
       return D.defaultVariable {
         D.nameVariable  = nameStr
@@ -1183,16 +790,13 @@ getBindingVariablesRoot ctxMVar bindings = do
       , D.variablesReferenceVariable = nextIdx
       }
 
-    withTerm i _ = do
+    withTerm i _ = withId i
+
+    withId i = do
       dflags <- getDynFlags
       idSDoc   <- pprTypeAndContents i
 
       let (nameStr, typeStr, valStr) = getNameTypeValue (showSDoc dflags idSDoc)
-      {-
-      let nameStr = takeWhile (/= ' ') $ showSDoc dflags idSDoc
-          typeStr = showSDoc dflags idSDoc
-          valStr = "<define>"
-      -}
 
       return D.defaultVariable {
         D.nameVariable  = nameStr
@@ -1205,35 +809,36 @@ getBindingVariablesRoot ctxMVar bindings = do
 
 -- |
 --
-getNextIdx :: MVar DAPContext -> Term -> String -> GHCi.GHCi Int
-getNextIdx ctxMVar t@(Term ty _ _ subTerms) str = getDynFlags >>= withDynFlags
+getNextIdx :: Term -> String -> Gi.GHCi Int
+getNextIdx t@(Term ty _ _ subTerms) str = getDynFlags >>= withDynFlags
   where
-    withDynFlags dflags 
+    withDynFlags dflags
       | 0 == length subTerms = return 0
       | 1 == length subTerms && isPrim (head subTerms)  = return 0
       | "[Char]" == showSDoc dflags (pprTypeForUser ty) = return 0
       | "String" == showSDoc dflags (pprTypeForUser ty) = return 0
-      | otherwise = liftIO $ addTerm2VariableReferenceMap ctxMVar t str
+      | otherwise = addTerm2VariableReferenceMap t str
 
-getNextIdx ctxMVar t str = liftIO $ addTerm2VariableReferenceMap ctxMVar t str
+getNextIdx t str = addTerm2VariableReferenceMap t str
 
 
 -- |
 --
-addTerm2VariableReferenceMap :: MVar DAPContext -> Term -> String -> IO Int
-addTerm2VariableReferenceMap ctxMVar t str = do
-  ctx <- takeMVar ctxMVar
+addTerm2VariableReferenceMap :: Term -> String -> Gi.GHCi Int
+addTerm2VariableReferenceMap t str = do
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
   let curMap = variableReferenceMapDAPContext ctx
       nextId = (M.size curMap) + 10
 
-  putMVar ctxMVar $ ctx {variableReferenceMapDAPContext = M.insert nextId (t, str) curMap}
+  liftIO $ putMVar ctxMVar $ ctx {variableReferenceMapDAPContext = M.insert nextId (t, str) curMap}
 
   return nextId
 
 
 -- |
 --
-getDataConstructor :: Term -> GHCi.GHCi String
+getDataConstructor :: Term -> Gi.GHCi String
 getDataConstructor (Term _ (Left dc) _ _) = return dc
 getDataConstructor (Term _ (Right dc) _ _) = do
   dflags <- getDynFlags
@@ -1244,11 +849,11 @@ getDataConstructor (Term _ (Right dc) _ _) = do
 getDataConstructor _ = return "[getDataConstructor] not supported type."
 
 
-
 -- |
 --
-getBindingVariablesNode :: MVar DAPContext -> Int -> GHCi.GHCi [D.Variable]
-getBindingVariablesNode ctxMVar idx = do
+getBindingVariablesNode :: Int -> Gi.GHCi [D.Variable]
+getBindingVariablesNode idx = do
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ readMVar ctxMVar
   case M.lookup idx (variableReferenceMapDAPContext ctx) of
     Just (t, str)  -> withTerm t str
@@ -1280,7 +885,7 @@ getBindingVariablesNode ctxMVar idx = do
           typeStr = showSDoc dflags (pprTypeForUser ty)
           valStr  = showSDoc dflags termSDoc
 
-      nextIdx <- getNextIdx ctxMVar t evalStr
+      nextIdx <- getNextIdx t evalStr
       valStr' <- if 0 == nextIdx then return valStr
                    else  getDataConstructor t
       return D.defaultVariable {
@@ -1316,22 +921,396 @@ getBindingVariablesNode ctxMVar idx = do
       , D.variablesReferenceVariable = 0
       }
 
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-continue
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapContinueCommand :: String -> Gi.GHCi ()
+dapContinueCommand argsStr = 
+  withArgs (readDAP argsStr) >>= withStopResult
+
+  where
+  
+    -- |
+    --
+    withArgs :: Either String D.ContinueRequestArguments -> Gi.GHCi (Either String D.StoppedEventBody)
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right args) = case  D.exprContinueRequestArguments args of
+      Just expr -> runWithStmtTrace expr
+      Nothing   -> runNoStmtTrace
+
+
+    -- |
+    --
+    runWithStmtTrace expr = do
+      clearTmpDAPContext
+      Gi.traceCmd expr
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ readMVar ctxMVar
+      withStmtTraceResults $ traceCmdExecResultDAPContext ctx
+
+
+    -- |
+    --
+    withStmtTraceResults [] = return $ Left $ "invalid trace arg result."
+    withStmtTraceResults (res:[]) = withStmtTraceResult res
+    withStmtTraceResults (res:_) = do
+      warnL $ "two or more trace arg results. use first result. "
+      withStmtTraceResult res
+    
+
+    -- |
+    --
+    withStmtTraceResult (Just res) = withExecResult "breakpoint" res
+    withStmtTraceResult Nothing = do
+      msg <- getRunStmtSourceError
+      return $ Left $ msg
+
+
+    -- |
+    --
+    runNoStmtTrace = do
+      clearTmpDAPContext
+      Gi.traceCmd ""
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ readMVar ctxMVar
+      withNoStmtTraceResults $ doContinueExecResultDAPContext ctx
+
+
+    -- |
+    --
+    withNoStmtTraceResults [] = return $ Left $ "invalid trace no arg result."
+    withNoStmtTraceResults (res:[]) = withExecResult "breakpoint" res
+    withNoStmtTraceResults (res:_) = do
+      warnL $ "two or more trace no arg results. use first result. "
+      withExecResult "breakpoint" res
+
+
+    -- |
+    --
+    withStopResult :: Either String D.StoppedEventBody -> Gi.GHCi ()
+    withStopResult res@(Right D.StoppedEventBody{D.reasonStoppedEventBody = "breakpoint"}) = breakthrough res
+    withStopResult res = printDAP res
+
+
+    -- |
+    --
+    breakthrough :: Either String D.StoppedEventBody -> Gi.GHCi ()
+    breakthrough res = isBreakthrough >>= \case
+      False -> printDAP res
+      True  -> runNoStmtTrace >>= withStopResult
+
+
+    -- |
+    --
+    isBreakthrough :: Gi.GHCi Bool
+    isBreakthrough = G.getResumeContext >>= withResumes
+
+    -- |
+    --   @return
+    --    True  -> thruough
+    --    False -> break
+    --
+    withResumes :: [G.Resume] -> Gi.GHCi Bool
+    withResumes [] = do
+      warnL "invalid resume state."
+      return False
+
+    withResumes (r:_) =   pure (G.resumeBreakInfo r)
+                      >>= Gi.toBreakIdAndLocation
+                      >>= withBreakInfo
+
+    -- |
+    --   @return
+    --    True  -> thruough
+    --    False -> break
+    --
+    withBreakInfo ::  Maybe (Int, Gi.BreakLocation) -> Gi.GHCi Bool
+    withBreakInfo Nothing = do
+      warnL "invalid resume break info state."
+      return False
+
+    withBreakInfo (Just (no, _)) = findSrcBP no >>= \case
+      Just srcBP -> withSrcBP no srcBP
+      Nothing    -> findFuncBP no >>= \case
+        Just fncBP -> withFuncBP no fncBP
+        Nothing    -> do
+          warnL $ "invalid break no. " ++ show no
+          return False
+
+    -- |
+    --
+    findSrcBP no = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      srcBPs <- liftIO $ srcBPsDAPContext <$> readMVar ctxMVar
+      return $ M.lookup no srcBPs
+
+    -- |
+    --
+    findFuncBP no = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      funcBPs <- liftIO $ funcBPsDAPContext <$> readMVar ctxMVar
+      return $ M.lookup no funcBPs
+
+    -- |
+    --   @return
+    --    True  -> thruough
+    --    False -> break
+    --
+    withSrcBP :: Int -> SourceBreakpointInfo -> Gi.GHCi Bool
+    withSrcBP no bpInfo = 
+      let bpCond = D.conditionSourceBreakpoint (srcBPSourceBreakpointInfo bpInfo)
+          bpLog  = D.logMessageSourceBreakpoint (srcBPSourceBreakpointInfo bpInfo)
+      in
+        srcBreakthroughCounterHandler no bpInfo >>= \case
+          Just res -> return res
+          Nothing -> breakthroughCondtionHandler no bpCond >>= \case
+            Just res -> return res
+            Nothing -> logPointHandler no bpLog >>= \case
+              Just res -> return res
+              Nothing  -> return False
+
+
+    -- |
+    --   @return
+    --    True  -> thruough
+    --    False -> break
+    --
+    withFuncBP no bpInfo = 
+      let bpCond = D.conditionFunctionBreakpoint (fst bpInfo)
+      in
+        funcBreakthroughCounterHandler no bpInfo >>= \case
+          Just res -> return res
+          Nothing -> breakthroughCondtionHandler no bpCond >>= \case
+            Just res -> return res
+            Nothing  -> return False
+
+    -- |
+    --
+    srcBreakthroughCounterHandler :: Int -> SourceBreakpointInfo -> Gi.GHCi (Maybe Bool)
+    srcBreakthroughCounterHandler _ SourceBreakpointInfo {
+                                      srcBPSourceBreakpointInfo = D.SourceBreakpoint {
+                                        D.hitConditionSourceBreakpoint = Nothing
+                                      }
+                                    } = return Nothing
+    srcBreakthroughCounterHandler no bpInfo@SourceBreakpointInfo {
+                                              srcBPSourceBreakpointInfo = D.SourceBreakpoint {
+                                                  D.hitConditionSourceBreakpoint = Just condStr
+                                              }
+                                            , hitCntSourceBreakpointInfo = curCnt} = do
+      let newCnt = curCnt + 1
+          stmt   = if L.isInfixOf "_CNT" condStr 
+                     then "let _CNT = " ++ show newCnt ++ " in " ++ condStr
+                     else "let _CNT = " ++ show newCnt ++ " in _CNT " ++ condStr
+
+      updateSrcBreakCounter no bpInfo{hitCntSourceBreakpointInfo = newCnt}
+
+      runStmtDAP False stmt >>= \case
+        Left  err -> do
+          errorL $ "hit condition statement fail. " ++ stmt ++ " -> " ++ err
+          return $ Just False
+        Right res -> do
+          infoL $ "hit condition statement result. " ++ stmt ++ " -> " ++ show res
+          return $ Just ("False" == D.resultEvaluateResponseBody res)
+
+    -- |
+    --
+    updateSrcBreakCounter no bpInfo = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let cur = srcBPsDAPContext ctx
+          new = M.insert no bpInfo cur
+      liftIO $ putMVar ctxMVar ctx{srcBPsDAPContext = new}
+
+
+    -- |
+    --
+    funcBreakthroughCounterHandler :: Int -> (D.FunctionBreakpoint, Int) -> Gi.GHCi (Maybe Bool)
+    funcBreakthroughCounterHandler _ (D.FunctionBreakpoint{D.hitConditionFunctionBreakpoint = Nothing}, _) = return Nothing
+    funcBreakthroughCounterHandler no info@(D.FunctionBreakpoint{D.hitConditionFunctionBreakpoint = Just condStr}, curCnt) = do
+      let newCnt = curCnt + 1
+          stmt   = if L.isInfixOf "_CNT" condStr 
+            then "let _CNT = " ++ show newCnt ++ " in " ++ condStr
+            else "let _CNT = " ++ show newCnt ++ " in _CNT " ++ condStr
+
+      updateFuncBreakCounter no (fst info, newCnt)
+
+      runStmtDAP False stmt >>= \case
+        Left  err -> do
+          errorL $ "hit condition statement fail. " ++ stmt ++ " -> " ++ err
+          return $ Just False
+        Right res -> do
+          when ("Bool" /= D.typeEvaluateResponseBody res) $ do
+            warnL $ "hit condition statement result type is not Bool. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ show res
+          return $ Just ("False" == D.resultEvaluateResponseBody res)
+
+
+    -- |
+    --
+    updateFuncBreakCounter no bpInfo = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ takeMVar ctxMVar
+      let cur = funcBPsDAPContext ctx
+          new = M.insert no bpInfo cur
+      liftIO $ putMVar ctxMVar ctx{funcBPsDAPContext = new}
+
+    -- |
+    --   @return
+    --     True  -> breakthrough
+    --     False -> break
+    --
+    breakthroughCondtionHandler :: Int -> Maybe String -> Gi.GHCi (Maybe Bool)
+    breakthroughCondtionHandler _ Nothing = return Nothing
+    breakthroughCondtionHandler no (Just stmt) = do
+      runStmtDAP False stmt >>= \case
+        Left  err -> do
+          errorL $ "condition statement fail. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ err
+          return $ Just False
+        Right res -> do
+          when ("Bool" /= D.typeEvaluateResponseBody res) $ do
+            warnL $ "condition statement result type is not Bool. BPNO:" ++ show no ++ " " ++ stmt ++ " -> " ++ show res
+          return $ Just ("False" == D.resultEvaluateResponseBody res)
+
+    -- |
+    --   @return
+    --     must be True -> breakthrough
+    -- 
+    logPointHandler :: Int -> Maybe String -> Gi.GHCi (Maybe Bool)
+    logPointHandler _ Nothing = return Nothing
+    logPointHandler no (Just stmt) = do
+      runStmtDAP False stmt >>= \case
+        Left err -> do
+          let msg = "logpoint evaluate statement error at BPNO:" ++ show no ++ " error:" ++ err
+              body = D.defaultOutputEventBody { D.outputOutputEventBody = msg
+                                              , D.categoryOutputEventBody = "stderr" }
+          printOutputEventDAP (Right body)
+          return $ Just False
+
+        Right res -> do
+          let msg = D.resultEvaluateResponseBody res ++ "\n"
+              body = D.defaultOutputEventBody { D.outputOutputEventBody = msg
+                                              , D.categoryOutputEventBody = "console"}
+
+          printOutputEventDAP (Right body)
+          return $ Just True
+
+
+-- |
+--
+withExecResult :: String-> G.ExecResult -> Gi.GHCi (Either String D.StoppedEventBody)
+withExecResult _ (G.ExecComplete { G.execResult = Right _ }) = do
+  return $  Right D.defaultStoppedEventBody {
+              D.reasonStoppedEventBody = "complete"
+            }
+  
+withExecResult _ (G.ExecComplete { G.execResult = Left (SomeException e)}) = do
+  return $  Right D.defaultStoppedEventBody {
+              D.reasonStoppedEventBody = "complete"
+            , D.descriptionStoppedEventBody = show e
+            , D.textStoppedEventBody = show e
+            }
+
+withExecResult reason (G.ExecBreak{G.breakInfo = Just (BreakInfo _ _)}) = do
+  return $  Right D.defaultStoppedEventBody {
+              D.reasonStoppedEventBody = reason
+            }
+
+withExecResult _ (G.ExecBreak{G.breakInfo = Nothing}) = do
+  let key = "_exception"
+  gcatch (G.parseName key) parseNameErrorHandler >>= names2EvalBody False key >>= \case
+    Left  msg  -> return $ Left $ "invalid _exception result." ++ msg
+    Right body -> return $ Right D.defaultStoppedEventBody {
+        D.reasonStoppedEventBody = "exception"
+      , D.descriptionStoppedEventBody = D.resultEvaluateResponseBody body
+      , D.textStoppedEventBody = D.resultEvaluateResponseBody body
+      }
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-next
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapNextCommand :: String -> Gi.GHCi ()
+dapNextCommand argsStr = do
+  res <- withArgs (readDAP argsStr)
+  printDAP res
+
+  where
+    withArgs :: Either String D.NextRequestArguments -> Gi.GHCi (Either String D.StoppedEventBody)
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right _) = do
+      clearTmpDAPContext
+
+      Gi.stepLocalCmd ""
+
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ readMVar ctxMVar
+      withResults $ doContinueExecResultDAPContext ctx
+
+
+    -- |
+    --
+    withResults [] = return $ Left $ "invalid stepLocalCmd result."
+    withResults (res:[]) = withExecResult "step" res
+    withResults (res:_) = do
+      warnL $ "two or more stepLocalCmd results. use first result. "
+      withExecResult "step" res
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-step-in
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapStepInCommand :: String -> Gi.GHCi ()
+dapStepInCommand argsStr = do
+  res <- withArgs (readDAP argsStr)
+  printDAP res
+  
+  where
+    withArgs :: Either String D.StepInRequestArguments -> Gi.GHCi (Either String D.StoppedEventBody)
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
+    withArgs (Right _) = do
+      clearTmpDAPContext
+
+      Gi.stepCmd ""
+
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ readMVar ctxMVar
+      withResults $ doContinueExecResultDAPContext ctx
+
+
+    -- |
+    --
+    withResults [] = return $ Left $ "invalid stepCmd result."
+    withResults (res:[]) = withExecResult "step" res
+    withResults (res:_) = do
+      warnL $ "two or more stepCmd results. use first result. "
+      withExecResult "step" res
+
+
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-evaluate
 ------------------------------------------------------------------------------------------------
 
 -- |
 --
-dapEvaluateCommand :: MVar DAPContext -> String -> GHCi.GHCi ()
-dapEvaluateCommand ctxMVar argsStr = do
+dapEvaluateCommand :: String -> Gi.GHCi ()
+dapEvaluateCommand argsStr = do
   res <- withArgs (readDAP argsStr) 
   printDAP res
 
   where
     -- |
     --
-    withArgs :: Either String D.EvaluateRequestArguments -> GHCi.GHCi (Either String D.EvaluateResponseBody)
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
+    withArgs :: Either String D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
+    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
     withArgs (Right args) = case D.contextEvaluateRequestArguments args of
       Nothing     -> runRepl args
       Just "repl" -> runRepl args
@@ -1339,7 +1318,7 @@ dapEvaluateCommand ctxMVar argsStr = do
 
     -- |
     --
-    runRepl ::  D.EvaluateRequestArguments -> GHCi.GHCi (Either String D.EvaluateResponseBody)
+    runRepl ::  D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
     runRepl args
       | null (D.expressionEvaluateRequestArguments args) = return $ Right D.defaultEvaluateResponseBody {
           D.resultEvaluateResponseBody = "no input."
@@ -1350,56 +1329,56 @@ dapEvaluateCommand ctxMVar argsStr = do
         let stmt = D.expressionEvaluateRequestArguments args
             isRefable = True
 
-        runStmtDAP ctxMVar isRefable stmt
+        runStmtDAP isRefable stmt
 
     -- |
     --
-    runOther ::  D.EvaluateRequestArguments -> GHCi.GHCi (Either String D.EvaluateResponseBody)
+    runOther ::  D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
     runOther args = do 
       let nameStr = D.expressionEvaluateRequestArguments args
-      names <- gcatch (GHC.parseName nameStr) parseNameErrorHandler
-      names2EvalBody ctxMVar True nameStr names
+      names <- gcatch (G.parseName nameStr) parseNameErrorHandler
+      names2EvalBody True nameStr names
 
 
 -- |
 --
-runStmtDAP :: MVar DAPContext -> Bool -> String -> GHCi.GHCi (Either String D.EvaluateResponseBody)
-runStmtDAP ctxMVar isRefable stmt = do
+runStmtDAP :: Bool -> String -> Gi.GHCi (Either String D.EvaluateResponseBody)
+runStmtDAP isRefable stmt = do
   clearTmpDAPContext
 
-  GHCi.runStmt stmt GHC.RunToCompletion >>= \case
+  Gi.runStmt stmt G.RunToCompletion >>= \case
     Nothing -> Left <$> getRunStmtSourceError
-    Just (GHC.ExecBreak _ Nothing) -> return $ Left $ "unexpected break occured while evaluating stmt:" ++ stmt
-    Just (GHC.ExecBreak _ (Just (BreakInfo (GHC.Module _ modName) idx)))   -> do
-      let modStr = GHC.moduleNameString modName
+    Just (G.ExecBreak _ Nothing) -> return $ Left $ "unexpected break occured while evaluating stmt:" ++ stmt
+    Just (G.ExecBreak _ (Just (BreakInfo (G.Module _ modName) idx)))   -> do
+      let modStr = G.moduleNameString modName
       return $ Left $  "unexpected break occured. breakNo:" ++ show idx
                     ++ " in " ++ modStr ++ " while evaluating stmt:" ++ stmt
-    Just (GHC.ExecComplete (Left msg) _) -> return $ Left $ "runStmt error. " ++ show msg
-    Just (GHC.ExecComplete (Right names) _) -> names2EvalBody ctxMVar isRefable stmt names
+    Just (G.ExecComplete (Left msg) _) -> return $ Left $ "runStmt error. " ++ show msg
+    Just (G.ExecComplete (Right names) _) -> names2EvalBody isRefable stmt names
     
 
 -- |
 --
 --
-names2EvalBody :: MVar DAPContext -> Bool -> String -> [GHC.Name] -> GHCi.GHCi (Either String D.EvaluateResponseBody)
-names2EvalBody ctxMVar isRefable key names
+names2EvalBody :: Bool -> String -> [G.Name] -> Gi.GHCi (Either String D.EvaluateResponseBody)
+names2EvalBody isRefable key names
   | 0 == length names = return $ Left $ "Not in scope. " ++ key
   | 1 == length names = withName $ head names
   | otherwise = return $ Left $ "Ambiguous name. " ++ key
 
   where
-    withName n = GHC.lookupName n >>= \case
+    withName n = G.lookupName n >>= \case
       Nothing -> return $ Left $ "TyThing not found. " ++ key
       Just ty -> withTyThing ty
 
     withTyThing (AnId i) = do
       let isForce = True
           depth   = _EVALUATE_INSPECT_DEPTH
-      body  <- GHC.obtainTermFromId depth isForce i >>= withTerm i
+      body  <- G.obtainTermFromId depth isForce i >>= withTerm i
       return $ Right body
 
     withTyThing x = do
-      liftIO $ putStrLn "[DAP][INFO]  withTyThing x Not yet supported."
+      infoL "withTyThing x Not yet supported."
       dflags <- getDynFlags
       return $ Right D.defaultEvaluateResponseBody {
                D.resultEvaluateResponseBody = showSDoc dflags (ppr x)
@@ -1410,18 +1389,16 @@ names2EvalBody ctxMVar isRefable key names
     -- |
     --  Term https://hackage.haskell.org/package/ghc-8.2.1/docs/RtClosureInspect.html
     --
-    withTerm :: GHC.Id -> Term -> GHCi.GHCi D.EvaluateResponseBody
+    withTerm :: G.Id -> Term -> Gi.GHCi D.EvaluateResponseBody
     withTerm _ t@(Term ty _ _ _) = do
       dflags <- getDynFlags
       termSDoc <- gcatch (showTerm t) showTermErrorHandler
       let typeStr = showSDoc dflags (pprTypeForUser ty)
           valStr  = showSDoc dflags termSDoc
 
-      nextIdx <- if True == isRefable then getNextIdx ctxMVar t key else return 0
+      nextIdx <- if True == isRefable then getNextIdx t key else return 0
       valStr' <- if 0 == nextIdx then return valStr
                    else  getDataConstructor t
-
-      -- liftIO $ putStrLn "[DAP][INFO] Term Not yet supported."
 
       return D.defaultEvaluateResponseBody {
                D.resultEvaluateResponseBody = delDQ typeStr valStr'
@@ -1434,8 +1411,6 @@ names2EvalBody ctxMVar isRefable key names
       termSDoc <- gcatch (showTerm t) showTermErrorHandler
       let typeStr = showSDoc dflags (pprTypeForUser ty)
           valStr  = showSDoc dflags termSDoc
-
-      -- liftIO $ putStrLn "[DAP][INFO] Prim Not yet supported."
 
       return D.defaultEvaluateResponseBody {
                 D.resultEvaluateResponseBody = valStr
