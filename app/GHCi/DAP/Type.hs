@@ -1,6 +1,6 @@
 module GHCi.DAP.Type where
 
-import qualified GHC
+import qualified GHC as G
 import RtClosureInspect
 
 import qualified Data.Map as M
@@ -49,15 +49,17 @@ data SourceBreakpointInfo = SourceBreakpointInfo {
 --
 data DAPContext = DAPContext {
     variableReferenceMapDAPContext :: M.Map Int (Term, EvalString)
-  , bindingDAPContext :: [GHC.TyThing]
-  , bindingGlobalDAPContext :: [GHC.TyThing]
-  , frameIdDAPContext :: Int
-  , srcBPsDAPContext  :: M.Map Int SourceBreakpointInfo
-  , funcBPsDAPContext :: M.Map Int (D.FunctionBreakpoint, Int)
-  , traceCmdExecResultDAPContext   :: [Maybe GHC.ExecResult]
-  , doContinueExecResultDAPContext :: [GHC.ExecResult]
+  , bindingDAPContext              :: [G.TyThing]
+  , bindingGlobalDAPContext        :: [G.TyThing]
+  , frameIdDAPContext              :: Int
+  , srcBPsDAPContext               :: M.Map Int SourceBreakpointInfo
+  , funcBPsDAPContext              :: M.Map Int (D.FunctionBreakpoint, Int)
+  , traceCmdExecResultDAPContext   :: [Maybe G.ExecResult]
+  , doContinueExecResultDAPContext :: [G.ExecResult]
   , runStmtDeclExceptionDAPContext :: [SourceError]
-  , logLevelDAPContext :: LogLevel
+  , logLevelDAPContext             :: LogLevel
+  , stackTraceResultDAPContext     :: Maybe (G.Resume, [G.History])
+  , bindingNamesDAPContext         :: [G.Name]
   }
 
   
@@ -75,6 +77,8 @@ defaultDAPContext = DAPContext {
   , doContinueExecResultDAPContext = []
   , runStmtDeclExceptionDAPContext = []
   , logLevelDAPContext = InfoLogLevel
+  , stackTraceResultDAPContext = Nothing
+  , bindingNamesDAPContext = []
   }
 
   

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 797b27c7333c5791aa0c768dce9f0f4a0a61f71fbb0221d0aaf8db77843a47b3
+-- hash: c7f2dacd734c09081f125d779949404a2d1c0585c81ac17438042537c9a10299
 
 name:           ghci-dap
 version:        0.0.11.0
@@ -33,6 +33,7 @@ executable ghci-dap
       GHCi.DAP.Command
       GHCi.DAP.Constant
       GHCi.DAP.Type
+      GHCi.DAP.UI
       GHCi.DAP.Utility
       Paths_ghci_dap
   hs-source-dirs:
