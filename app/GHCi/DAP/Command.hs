@@ -41,7 +41,7 @@ dapCommands = map mkCmd [
   , ("dap-set-function-breakpoint",  dapCmdRunner setFuncBpCmd,     noCompletion)
   , ("dap-delete-breakpoint",        dapCmdRunner delBpCmd,         noCompletion)
   , ("dap-stacktrace",               dapCmdRunner dapStackTraceCmd, noCompletion)
-  , ("dap-scopes",          dapCmdRunner dapScopesCommand,                 noCompletion)
+  , ("dap-scopes",                   dapCmdRunner dapScopesCmd,     noCompletion)
   , ("dap-variables",       dapCmdRunner dapVariablesCommand,              noCompletion)
   , ("dap-evaluate",        dapCmdRunner dapEvaluateCommand,               noCompletion)
   , ("dap-continue",        dapCmdRunner dapContinueCommand,               noCompletion)
@@ -49,6 +49,8 @@ dapCommands = map mkCmd [
   , ("dap-step-in",                  dapCmdRunner stepInCmd,        noCompletion)
   ]
   where
+    mkCmd :: (String, String -> InputT Gi.GHCi Bool, CompletionFunc Gi.GHCi)
+          -> Gi.Command
     mkCmd (n,a,c) = Gi.Command {
                     Gi.cmdName = n
                   , Gi.cmdAction = a
@@ -56,17 +58,16 @@ dapCommands = map mkCmd [
                   , Gi.cmdCompletionFunc = c
                   }
 
+    -- |
+    --
+    dapCmdRunner :: (String -> Gi.GHCi ())
+                -> String
+                -> InputT Gi.GHCi Bool
+    dapCmdRunner cmd str = do
+      
+      lift $ cmd str
 
--- |
---
-dapCmdRunner :: (String -> Gi.GHCi ())
-             -> String
-             -> InputT Gi.GHCi Bool
-dapCmdRunner cmd str = do
-  
-  lift $ cmd str
-
-  return False
+      return False
 
 
       
@@ -463,60 +464,63 @@ dapStackTraceCmd_ _ = do
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-scopes
 ------------------------------------------------------------------------------------------------
+-- |
+--
+dapScopesCmd :: String -> Gi.GHCi ()
+dapScopesCmd argsStr = flip gcatch errHdl $ do
+  decodeDAP argsStr
+  >>= dapScopesCmd_
+  >>= printDAP
 
 -- |
 --
-dapScopesCommand :: String -> Gi.GHCi ()
-dapScopesCommand argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-  
-  where
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) = do
-      let idx  = D.frameIdScopesRequestArguments args
-      getScopesResponseBody idx
+dapScopesCmd_ :: D.ScopesRequestArguments
+              -> Gi.GHCi (Either String D.ScopesResponseBody)
+dapScopesCmd_ args = moveScope >> makeResponse
 
+  where
     -- |
     --
-    getScopesResponseBody :: Int -> Gi.GHCi (Either String D.ScopesResponseBody)
-    getScopesResponseBody curIdx = do
-      -- liftIO $ putStrLn $ "[DAP][getScopesResponseBody] frame id." ++ frameIdStr
+    moveScope :: Gi.GHCi ()
+    moveScope = do
+      let curIdx = D.frameIdScopesRequestArguments args
       ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
-      oldIdx <- liftIO $ frameIdDAPContext <$> readMVar ctxMVar
+      oldIdx  <- liftIO $ frameIdDAPContext <$> readMVar ctxMVar
       let moveIdx = curIdx - oldIdx
 
       tyThings <- withMoveIdx moveIdx
       gobalTT  <- getGlobalBindings
 
-      -- liftIO $ putStrLn $ "[DAP][getScopesResponseBody] tyThings count." ++ show (length tyThings)
       ctx <- liftIO $ takeMVar ctxMVar
       liftIO $ putMVar ctxMVar ctx {
           variableReferenceMapDAPContext = M.empty
-        , bindingDAPContext = tyThings
-        , bindingGlobalDAPContext = gobalTT
-        , frameIdDAPContext = curIdx
+        , bindingDAPContext              = tyThings
+        , bindingGlobalDAPContext        = gobalTT
+        , frameIdDAPContext              = curIdx
         }
-    
-      return $ Right D.ScopesResponseBody {
-        D.scopesScopesResponseBody = [
-          D.defaultScope{
-              D.nameScope = _GHCi_SCOPE
-            , D.variablesReferenceScope = 1
-            , D.namedVariablesScope = Nothing
-            , D.indexedVariablesScope = Nothing
-            , D.expensiveScope = False
-            }
-          ,
-          D.defaultScope{
-              D.nameScope = _GHCi_GLOBAL_SCOPE
-            , D.variablesReferenceScope = 2
-            , D.namedVariablesScope = Nothing
-            , D.indexedVariablesScope = Nothing
-            , D.expensiveScope = False
-            }
-          ]
-        }
+
+    -- |
+    --
+    makeResponse :: Gi.GHCi (Either String D.ScopesResponseBody)
+    makeResponse = return $ Right D.ScopesResponseBody {
+      D.scopesScopesResponseBody = [
+        D.defaultScope{
+            D.nameScope = _GHCi_SCOPE
+          , D.variablesReferenceScope = 1
+          , D.namedVariablesScope = Nothing
+          , D.indexedVariablesScope = Nothing
+          , D.expensiveScope = False
+          }
+        ,
+        D.defaultScope{
+            D.nameScope = _GHCi_GLOBAL_SCOPE
+          , D.variablesReferenceScope = 2
+          , D.namedVariablesScope = Nothing
+          , D.indexedVariablesScope = Nothing
+          , D.expensiveScope = False
+          }
+        ]
+      }
 
     -- |
     --
@@ -543,7 +547,6 @@ dapScopesCommand argsStr = do
       names <- getBindingNames
       foldM withName [] $ reverse names
 
-      
     -- |
     --
     forward num = do
@@ -551,7 +554,7 @@ dapScopesCommand argsStr = do
       Gi.forwardCmd $ show num
       names <- getBindingNames
       foldM withName [] $ reverse names
-           
+
     -- |
     --
     withName acc n = G.lookupName n >>= \case
