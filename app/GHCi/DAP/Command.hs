@@ -42,8 +42,8 @@ dapCommands = map mkCmd [
   , ("dap-delete-breakpoint",        dapCmdRunner delBpCmd,         noCompletion)
   , ("dap-stacktrace",               dapCmdRunner dapStackTraceCmd, noCompletion)
   , ("dap-scopes",                   dapCmdRunner dapScopesCmd,     noCompletion)
-  , ("dap-variables",       dapCmdRunner dapVariablesCommand,              noCompletion)
-  , ("dap-evaluate",        dapCmdRunner dapEvaluateCommand,               noCompletion)
+  , ("dap-variables",                dapCmdRunner dapVariablesCmd,  noCompletion)
+  , ("dap-evaluate",                 dapCmdRunner dapEvalCmd,       noCompletion)
   , ("dap-continue",        dapCmdRunner dapContinueCommand,               noCompletion)
   , ("dap-next",                     dapCmdRunner nextCmd,          noCompletion)
   , ("dap-step-in",                  dapCmdRunner stepInCmd,        noCompletion)
@@ -524,6 +524,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
+    withMoveIdx :: Int -> Gi.GHCi [TyThing]
     withMoveIdx moveIdx
       | 0 == moveIdx = G.getBindings
       | 0 < moveIdx = back moveIdx
@@ -531,7 +532,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
   
     -- |
     --
-    getGlobalBindings :: GhcMonad m => m [TyThing]
+    getGlobalBindings :: Gi.GHCi [TyThing]
     getGlobalBindings = withSession $ \hsc_env -> do
       let ic = hsc_IC hsc_env
           gb = ic_rn_gbl_env ic
@@ -541,6 +542,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
+    back :: Int -> Gi.GHCi [TyThing]
     back num = do
       clearBindingNames
       Gi.backCmd $ show num
@@ -549,6 +551,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
+    forward :: Int -> Gi.GHCi [TyThing]
     forward num = do
       clearBindingNames
       Gi.forwardCmd $ show num
@@ -557,44 +560,48 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
+    withName :: [TyThing] -> G.Name -> Gi.GHCi [TyThing]
     withName acc n = G.lookupName n >>= \case
       Just ty -> return (ty : acc)
       Nothing ->  do
         dflags <- getDynFlags
-        liftIO $ putStrLn $ "[DAP][ERROR][getScopesResponseBody] variable not found. " ++ showSDoc dflags (ppr n)
+        errorL $ "variable not found. " ++ showSDoc dflags (ppr n)
         return acc
 
 
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-variables
 ------------------------------------------------------------------------------------------------
+-- |
+--
+dapVariablesCmd :: String -> Gi.GHCi ()
+dapVariablesCmd argsStr = flip gcatch errHdl $ do
+  decodeDAP argsStr
+  >>= dapVariablesCmd_
+  >>= printDAP
 
 -- |
 --
-dapVariablesCommand :: String -> Gi.GHCi ()
-dapVariablesCommand argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-
+dapVariablesCmd_ :: D.VariablesRequestArguments
+                 -> Gi.GHCi (Either String D.VariablesResponseBody)
+dapVariablesCmd_ args = do
+  let idx  = D.variablesReferenceVariablesRequestArguments args
+  vals <- getBindingVariables idx
+  return $ Right $ D.VariablesResponseBody $ L.sortBy compName vals
   where
-    withArgs :: Either String D.VariablesRequestArguments -> Gi.GHCi (Either String D.VariablesResponseBody)
-    withArgs (Left err) = return $ Left $ "[DAP][ERROR] " ++  err ++ " : " ++ argsStr
-    withArgs (Right args) = do
-      let idx  = D.variablesReferenceVariablesRequestArguments args
-
-      vals <- getBindingVariables idx
-
-      return $ Right $ D.VariablesResponseBody $  L.sortBy compName vals
-
+    -- |
+    --
+    compName :: D.Variable -> D.Variable -> Ordering
     compName a b = compare (D.nameVariable a) (D.nameVariable b)
+
 
 -- |
 --
 getBindingVariables :: Int -> Gi.GHCi [D.Variable]
 getBindingVariables idx
-  | 1 == idx = getBindingVariablesLocal
-  | 2 == idx = getBindingVariablesGlobal
-  | otherwise  = getBindingVariablesNode idx
+  | 1 == idx  = getBindingVariablesLocal
+  | 2 == idx  = getBindingVariablesGlobal
+  | otherwise = getBindingVariablesNode idx
 
 
 -- |
@@ -613,80 +620,74 @@ getBindingVariablesGlobal = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   bindings <- liftIO $ bindingGlobalDAPContext <$> readMVar ctxMVar
   getBindingVariablesRoot bindings
-  
+
 
 -- |
 --
 getBindingVariablesRoot :: [G.TyThing] -> Gi.GHCi [D.Variable]
-getBindingVariablesRoot bindings = do
-  -- bindings <- liftIO $ bindingDAPContext <$> readMVar ctxMVar
-  -- liftIO $ putStrLn $ "[DAP][INFO] bindings " ++ show (length bindings)
-
-  foldM go [] bindings
-  --mapM tyThing2Val bindings
-
+getBindingVariablesRoot bindings = mapM tyThing2Var bindings
   where
-    go acc ty = gcatch (doSomething acc ty) (onError acc)
-    doSomething acc ty = do
-      v <- tyThing2Val ty
-      return (v:acc)
-    onError :: [D.Variable] -> SomeException -> Gi.GHCi [D.Variable]
-    onError acc e = do
-      liftIO $ putStrLn $ "[DAP][DEBUG] ERROR: " ++ (show e)
-      return acc
-      
+          
     -- |
     --  TyThings https://hackage.haskell.org/package/ghc-8.2.1/docs/HscTypes.html#t:TyThing
     --
-    tyThing2Val :: G.TyThing -> Gi.GHCi D.Variable
-    tyThing2Val (AnId i) = do
+    tyThing2Var :: G.TyThing -> Gi.GHCi D.Variable
+    tyThing2Var t@(AConLike c) = define2Var t c
+    tyThing2Var t@(ATyCon c)   = define2Var t c
+    tyThing2Var t@(ACoAxiom c) = define2Var t c
+    tyThing2Var (AnId i) = do
+      ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+      ctx <- liftIO $ readMVar ctxMVar
+      inspectGID (isInspectVariableDAPContext ctx) i
+
+    -- |
+    --
+    define2Var :: (Outputable a, Outputable b)
+                => a -> b -> Gi.GHCi D.Variable
+    define2Var n t = do
       dflags <- getDynFlags
-      let nameStr = showSDoc dflags (ppr i)
-      if "_result" == nameStr
-        then do
-          -- liftIO $ putStrLn $ "xxxxxxxxxx _result"
-          withId i
-        else do
-          let isForce = True
-              depth   = _BINDING_INSPECT_DEPTH
-              
-          G.obtainTermFromId depth isForce i >>= withTerm i
-   
-    tyThing2Val t@(ATyCon c) = do
-      dflags <- getDynFlags
+      let name = showSDoc dflags (ppr n)
+          typ  = showSDoc dflags (ppr t)
       return D.defaultVariable {
-        D.nameVariable  = showSDoc dflags (ppr t)
-      , D.typeVariable  = showSDoc dflags (ppr c)
+        D.nameVariable  = name
+      , D.typeVariable  = typ
       , D.valueVariable = "<define>"
       , D.evaluateNameVariable = Nothing
       , D.variablesReferenceVariable = 0
       }
-  
-    tyThing2Val t@(AConLike c) = do
+
+    -- |
+    --
+    inspectGID :: Bool -> G.Id -> Gi.GHCi D.Variable
+    inspectGID False i = gid2Var i
+    inspectGID True  i = do
       dflags <- getDynFlags
-      return D.defaultVariable {
-        D.nameVariable  = showSDoc dflags (ppr t)
-      , D.typeVariable  = showSDoc dflags (ppr c)
-      , D.valueVariable = "<define>"
-      , D.evaluateNameVariable = Nothing
-      , D.variablesReferenceVariable = 0
-      }
-    
-    tyThing2Val x = do
+      case showSDoc dflags (ppr i) of
+        "_result" -> gid2Var i
+        _ -> G.obtainTermFromId _BINDING_INSPECT_DEPTH True i >>= term2Var i
+
+    -- |
+    --
+    gid2Var :: G.Id -> Gi.GHCi D.Variable
+    gid2Var i = do
       dflags <- getDynFlags
+      idSDoc <- pprTypeAndContents i
+
+      let (nameStr, typeStr, valStr) = getNameTypeValue (showSDoc dflags idSDoc)
+
       return D.defaultVariable {
-        D.nameVariable  = showSDoc dflags (ppr x)
-      , D.typeVariable  = "not yet supported tything."
-      , D.valueVariable = "not yet supported tything."
-      , D.evaluateNameVariable = Nothing
+        D.nameVariable  = nameStr
+      , D.typeVariable  = typeStr
+      , D.valueVariable = valStr
+      , D.evaluateNameVariable = Just nameStr
       , D.variablesReferenceVariable = 0
       }
 
     -- |
     --  Term https://hackage.haskell.org/package/ghc-8.2.1/docs/RtClosureInspect.html
     --
-    withTerm ::  G.Id -> Term -> Gi.GHCi D.Variable
-    withTerm i t@(Term ty _ _ _) = do
+    term2Var ::  G.Id -> Term -> Gi.GHCi D.Variable
+    term2Var i t@(Term ty _ _ _) = do
       dflags <- getDynFlags
       termSDoc <- gcatch (showTerm t) showTermErrorHandler
       let nameStr = showSDoc dflags (ppr i)
@@ -703,21 +704,7 @@ getBindingVariablesRoot bindings = do
       , D.variablesReferenceVariable = nextIdx
       }
 
-    withTerm i _ = withId i
-
-    withId i = do
-      dflags <- getDynFlags
-      idSDoc   <- pprTypeAndContents i
-
-      let (nameStr, typeStr, valStr) = getNameTypeValue (showSDoc dflags idSDoc)
-
-      return D.defaultVariable {
-        D.nameVariable  = nameStr
-      , D.typeVariable  = typeStr
-      , D.valueVariable = valStr
-      , D.evaluateNameVariable = Nothing
-      , D.variablesReferenceVariable = 0
-      }
+    term2Var i _ = gid2Var i
 
 
 -- |
@@ -727,28 +714,33 @@ getBindingVariablesNode idx = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ readMVar ctxMVar
   case M.lookup idx (variableReferenceMapDAPContext ctx) of
-    Just (t, str)  -> withTerm t str
-    Nothing -> do
-      liftIO $ putStrLn $ "[DAP][ERROR][getBindingVariablesNode] id not found. " ++ show idx
-      return []
+    Just (t, str) -> term2Vars t str
+    Nothing       -> throwError $ "variable id:" ++ show idx ++ " not found."
 
   where
-    withTerm (Term _ (Right dc) _ subTerms) str = do
+    -- |
+    --
+    term2Vars :: Term -> String -> Gi.GHCi [D.Variable]
+    term2Vars (Term _ (Right dc) _ subTerms) str = do
       let labels = if 0 == length (dataConFieldLabels dc)
                      then map (\i->"_" ++ show i) [1..(length subTerms)]
                      else map (unpackFS . flLabel) (dataConFieldLabels dc)
-      mapM (withSubTerm str) $ zip labels subTerms
+      mapM (subTerm2Var str) $ zip labels subTerms
 
-    withTerm (Term _ (Left _) _ subTerms) str = do
+    term2Vars (Term _ (Left _) _ subTerms) str = do
       let labels = map (\i->"_" ++ show i) [1..(length subTerms)]
-      mapM (withSubTerm str) $ zip labels subTerms
+      mapM (subTerm2Var str) $ zip labels subTerms
 
-    withTerm _ _ = do
-      liftIO $ putStrLn $ "[DAP][ERROR][getBindingVariablesNode] invalid map term type. " ++ show idx
+    term2Vars t str = do
+      dflags <- getDynFlags
+      let tstr = showSDoc dflags (ppr t)
+      warnL $ "unsupported map term type. " ++ tstr ++ ". idx:" ++ show idx ++ ", name:" ++ str
       return []
 
-    withSubTerm evalStr (label, t@(Term ty _ _ _)) = do
-      -- liftIO $ putStrLn $ "[DEBUG]" ++ "   subTerms. [" ++ show (length subTerms) ++ "]"
+    -- |
+    --
+    subTerm2Var :: String -> (String, Term) -> Gi.GHCi D.Variable
+    subTerm2Var evalStr (label, t@(Term ty _ _ _)) = do
       termSDoc <- gcatch (showTerm t) showTermErrorHandler
       dflags <- getDynFlags
 
@@ -766,7 +758,8 @@ getBindingVariablesNode idx = do
       , D.evaluateNameVariable = Just evalStr
       , D.variablesReferenceVariable = nextIdx
       }
-    withSubTerm evalStr (label, (Prim ty val)) = do
+
+    subTerm2Var evalStr (label, (Prim ty val)) = do
       dflags <- getDynFlags
       return D.defaultVariable {
         D.nameVariable  = label
@@ -775,7 +768,8 @@ getBindingVariablesNode idx = do
       , D.evaluateNameVariable = Just evalStr
       , D.variablesReferenceVariable = 0
       }
-    withSubTerm evalStr (label, (Suspension _ ty _ _)) = do
+
+    subTerm2Var evalStr (label, (Suspension _ ty _ _)) = do
       dflags <- getDynFlags
       return D.defaultVariable {
         D.nameVariable  = label
@@ -784,7 +778,8 @@ getBindingVariablesNode idx = do
       , D.evaluateNameVariable = Just evalStr
       , D.variablesReferenceVariable = 0
       }
-    withSubTerm evalStr (label, _) = return D.defaultVariable {
+
+    subTerm2Var evalStr (label, _) = return D.defaultVariable {
         D.nameVariable  = label
       , D.typeVariable  = "not supported subTerm."
       , D.valueVariable = "not supported subTerm."
@@ -796,45 +791,47 @@ getBindingVariablesNode idx = do
 ------------------------------------------------------------------------------------------------
 --  DAP Command :dap-evaluate
 ------------------------------------------------------------------------------------------------
+-- |
+--
+dapEvalCmd :: String -> Gi.GHCi ()
+dapEvalCmd argsStr = flip gcatch errHdl $ do
+  decodeDAP argsStr
+  >>= dapEvalCmd_
+  >>= printDAP
 
 -- |
 --
-dapEvaluateCommand :: String -> Gi.GHCi ()
-dapEvaluateCommand argsStr = do
-  res <- withArgs (readDAP argsStr) 
-  printDAP res
-
+dapEvalCmd_ :: D.EvaluateRequestArguments
+            -> Gi.GHCi (Either String D.EvaluateResponseBody)
+dapEvalCmd_ args = case D.contextEvaluateRequestArguments args of
+  Nothing      -> runRepl  args
+  Just "repl"  -> runRepl  args
+  Just "watch" -> runOther args
+  Just "hover" -> runOther args
+  _            -> runOther args
   where
     -- |
     --
-    withArgs :: Either String D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
-    withArgs (Left err) = return $ Left $ err ++ " : " ++ argsStr
-    withArgs (Right args) = case D.contextEvaluateRequestArguments args of
-      Nothing     -> runRepl args
-      Just "repl" -> runRepl args
-      _           -> runOther args
-
-    -- |
-    --
     runRepl ::  D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
-    runRepl args
-      | null (D.expressionEvaluateRequestArguments args) = return $ Right D.defaultEvaluateResponseBody {
-          D.resultEvaluateResponseBody = "no input."
-        , D.typeEvaluateResponseBody   = "no input."
-        , D.variablesReferenceEvaluateResponseBody = 0
-        }
-      | otherwise = do
-        let stmt = D.expressionEvaluateRequestArguments args
-            isRefable = True
-
-        runStmtDAP isRefable stmt
+    runRepl args = runStmt $ D.expressionEvaluateRequestArguments args
 
     -- |
     --
-    runOther ::  D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
+    runStmt :: String -> Gi.GHCi (Either String D.EvaluateResponseBody)
+    runStmt "" =
+      return $ Right D.defaultEvaluateResponseBody {
+               D.resultEvaluateResponseBody = "no input."
+             , D.typeEvaluateResponseBody   = "no input."
+             , D.variablesReferenceEvaluateResponseBody = 0
+             }
+    runStmt stmt = runStmtDAP True stmt
+
+    -- |
+    --
+    runOther :: D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
     runOther args = do 
       let nameStr = D.expressionEvaluateRequestArguments args
-      names <- gcatch (G.parseName nameStr) parseNameErrorHandler
+      names <- G.parseName nameStr
       names2EvalBody True nameStr names
 
 

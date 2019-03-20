@@ -60,6 +60,7 @@ data DAPContext = DAPContext {
   , logLevelDAPContext             :: LogLevel
   , stackTraceResultDAPContext     :: Maybe (G.Resume, [G.History])
   , bindingNamesDAPContext         :: [G.Name]
+  , isInspectVariableDAPContext    :: Bool
   }
 
   
@@ -79,6 +80,7 @@ defaultDAPContext = DAPContext {
   , logLevelDAPContext = InfoLogLevel
   , stackTraceResultDAPContext = Nothing
   , bindingNamesDAPContext = []
+  , isInspectVariableDAPContext = True
   }
 
   
