@@ -54,13 +54,12 @@ data DAPContext = DAPContext {
   , frameIdDAPContext              :: Int
   , srcBPsDAPContext               :: M.Map Int SourceBreakpointInfo
   , funcBPsDAPContext              :: M.Map Int (D.FunctionBreakpoint, Int)
-  , traceCmdExecResultDAPContext   :: [Maybe G.ExecResult]
-  , doContinueExecResultDAPContext :: [G.ExecResult]
-  , runStmtDeclExceptionDAPContext :: [SourceError]
+  , runStmtDeclExceptionDAPContext :: Maybe SourceError
   , logLevelDAPContext             :: LogLevel
   , stackTraceResultDAPContext     :: Maybe (G.Resume, [G.History])
   , bindingNamesDAPContext         :: [G.Name]
   , isInspectVariableDAPContext    :: Bool
+  , continueExecResultDAPContext   :: Maybe G.ExecResult
   }
 
   
@@ -74,13 +73,12 @@ defaultDAPContext = DAPContext {
   , frameIdDAPContext = 0
   , srcBPsDAPContext  = M.fromList []
   , funcBPsDAPContext = M.fromList []
-  , traceCmdExecResultDAPContext = []
-  , doContinueExecResultDAPContext = []
-  , runStmtDeclExceptionDAPContext = []
+  , runStmtDeclExceptionDAPContext = Nothing
   , logLevelDAPContext = InfoLogLevel
   , stackTraceResultDAPContext = Nothing
   , bindingNamesDAPContext = []
   , isInspectVariableDAPContext = True
+  , continueExecResultDAPContext = Nothing
   }
 
   

@@ -23,13 +23,17 @@
 module GHCi.UI (
         interactiveUI,
         GhciSettings(..),
-        defaultGhciSettings,
+        -- defaultGhciSettings,     -- DAP Modified
         ghciCommands,
         ghciWelcomeMsg,
-        -- haskell-dap add.
+        -- DAP add.
+        defaultGhciSettings,
         getLoadedModules,
         breakCmd,
         deleteCmd,
+        backCmd,
+        forwardCmd,
+        historyCmd,
         traceCmd,
         stepCmd,
         stepLocalCmd,
@@ -153,9 +157,7 @@ import GHCi.Leak
 -- DAP
 ------------------------------------------------------------------------------
 import qualified GHCi.DAP.Type as DAP
-import InteractiveEval (ExecResult)
-import Control.Concurrent
-
+import qualified GHCi.DAP.UI as DAP
 
 -----------------------------------------------------------------------------
 
@@ -617,7 +619,7 @@ runGHCi paths maybe_exprs = do
   -- if verbosity is greater than 0, or we are connected to a
   -- terminal, display the prompt in the interactive loop.
   -- is_tty <- liftIO (hIsTerminalDevice stdin)
-  is_tty <- liftIO (return True)
+  is_tty <- liftIO (return True)  -- DAP modified.
   let show_prompt = verbosity dflags > 0 || is_tty
 
   -- reset line number
@@ -3318,7 +3320,7 @@ traceCmd arg
   = withSandboxOnly ":trace" $ tr arg
   where
   tr []         = doContinue (const True) GHC.RunAndLogSteps
-  tr expression = runStmt expression GHC.RunAndLogSteps >>= saveTraceCmdExecResult >> return ()
+  tr expression = runStmt expression GHC.RunAndLogSteps >>= DAP.setContinueExecResult >> return ()
 
 continueCmd :: String -> GHCi ()
 continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC.RunToCompletion
@@ -3327,7 +3329,7 @@ continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC
 doContinue :: (SrcSpan -> Bool) -> SingleStep -> GHCi ()
 doContinue pre step = do
   runResult <- resume pre step
-  saveDoContinueExecResult runResult
+  DAP.setContinueExecResult (Just runResult)
   _ <- afterRunStmt pre runResult
   return ()
 
@@ -3379,6 +3381,8 @@ historyCmd arg
                                  (map (bold . hcat . punctuate colon . map text) names)
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
+        
+        DAP.setStackTraceResult r took
 
 bold :: SDoc -> SDoc
 bold c | do_bold   = text start_bold <> c <> text end_bold
@@ -3397,6 +3401,7 @@ backCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
+      DAP.setBindingNames names
 
 forwardCmd :: String -> GHCi ()
 forwardCmd arg
@@ -3413,6 +3418,9 @@ forwardCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
+
+      DAP.setBindingNames names
+
 
 -- handle the "break" command
 breakCmd :: String -> GHCi ()
@@ -3901,36 +3909,3 @@ wantNameFromInterpretedModule noCanDo str and_then =
                then noCanDo n $ text "module " <> ppr modl <>
                                 text " is not interpreted"
                else and_then n
-
-
-------------------------------------------------------------------------------------------------
---  DAP Utility
-------------------------------------------------------------------------------------------------
-
--- |
---
-saveTraceCmdExecResult :: Maybe ExecResult -> GHCi (Maybe ExecResult)
-saveTraceCmdExecResult res = do
-  mvarCtx <- dapContextGHCiState  <$> getGHCiState 
-
-  ctx <- liftIO $ takeMVar mvarCtx
-  let cur = DAP.traceCmdExecResultDAPContext ctx
-
-  liftIO $ putMVar mvarCtx ctx{DAP.traceCmdExecResultDAPContext = res : cur}
-
-  return res
-
-
--- |
---
-saveDoContinueExecResult :: ExecResult -> GHCi ExecResult
-saveDoContinueExecResult res = do
-  mvarCtx <- dapContextGHCiState <$> getGHCiState 
-
-  ctx <- liftIO $ takeMVar mvarCtx
-  let cur = DAP.doContinueExecResultDAPContext ctx
-
-  liftIO $ putMVar mvarCtx ctx{DAP.doContinueExecResultDAPContext = res : cur}
-
-  return res
-

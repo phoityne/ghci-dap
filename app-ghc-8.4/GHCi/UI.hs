@@ -3260,7 +3260,7 @@ traceCmd arg
   = withSandboxOnly ":trace" $ tr arg
   where
   tr []         = doContinue (const True) GHC.RunAndLogSteps
-  tr expression = runStmt expression GHC.RunAndLogSteps >>= DAP.saveTraceCmdExecResult >> return ()
+  tr expression = runStmt expression GHC.RunAndLogSteps >>= DAP.setContinueExecResult >> return ()
 
 continueCmd :: String -> GHCi ()
 continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC.RunToCompletion
@@ -3269,7 +3269,7 @@ continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC
 doContinue :: (SrcSpan -> Bool) -> SingleStep -> GHCi ()
 doContinue pre step = do
   runResult <- resume pre step
-  DAP.saveDoContinueExecResult runResult
+  DAP.setContinueExecResult (Just runResult)
   _ <- afterRunStmt pre runResult
   return ()
 

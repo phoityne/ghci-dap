@@ -14,7 +14,6 @@ extra-source-files:
 - Changelog.md
 - src-c-8.4/HsVersions.h
 - src-c-8.4/PosixSource.h
-- src-c-8.6/HsVersions.h
 - src-c-8.6/PosixSource.h
 
 when:

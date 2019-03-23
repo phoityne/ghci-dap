@@ -4,7 +4,7 @@ for various bits of the RTS.  They are linked
 in instead of the defaults.
 */
 
-#include "PosixSource.h"
+#include "PosixSource.h"   /* DAP modified */
 
 /*
  * This should be linked against Rts.h from the compiler which is compiling us.
@@ -60,7 +60,7 @@ StackOverflowHook (StgWord stack_size)    /* in bytes */
             (size_t) stack_size);
 }
 
-/*
+/* DAP modified 
 int main (int argc, char *argv[])
 {
     RtsConfig conf = defaultRtsConfig;

@@ -9,7 +9,7 @@
 --
 -----------------------------------------------------------------------------
 
-module GHCMain (ghcMain) where
+module GHCMain (ghcMain) where    -- DAP Modified
 
 -- The official GHC API
 import qualified GHC
@@ -26,7 +26,7 @@ import DriverPipeline   ( oneShot, compileFile )
 import DriverMkDepend   ( doMkDependHS )
 import DriverBkp   ( doBackpack )
 #if defined(GHCI)
-import GHCi.UI          ( interactiveUI, ghciWelcomeMsg, GhciSettings )
+import GHCi.UI          ( interactiveUI, ghciWelcomeMsg, GhciSettings )  -- DAP Modified
 #endif
 
 -- Frontend plugins
@@ -76,6 +76,7 @@ import Data.Char
 import Data.List
 import Data.Maybe
 
+-- DAP add
 import qualified GHC.Paths
 
 -----------------------------------------------------------------------------
@@ -90,8 +91,8 @@ import qualified GHC.Paths
 -----------------------------------------------------------------------------
 -- GHC's command-line interface
 
-ghcMain :: GhciSettings -> IO ()
-ghcMain setting = do
+ghcMain :: GhciSettings -> IO ()    -- DAP Modified
+ghcMain setting = do                -- DAP Modified
    initGCStatistics -- See Note [-Bsymbolic and hooks]
    hSetBuffering stdout LineBuffering
    hSetBuffering stderr LineBuffering
@@ -102,7 +103,7 @@ ghcMain setting = do
     argv0 <- getArgs
 
     let (minusB_args, argv1) = partition ("-B" `isPrefixOf`) argv0
-        mbMinusB | null minusB_args = Just GHC.Paths.libdir
+        mbMinusB | null minusB_args = Just GHC.Paths.libdir       -- DAP Modified
                  | otherwise = Just (drop 2 (last minusB_args))
 
     let argv2 = map (mkGeneralLocated "on the commandline") argv1
@@ -140,11 +141,11 @@ ghcMain setting = do
                             ShowGhciUsage          -> showGhciUsage dflags
                             PrintWithDynFlags f    -> putStrLn (f dflags)
                 Right postLoadMode ->
-                    main' setting postLoadMode dflags argv3 flagWarnings
+                    main' setting postLoadMode dflags argv3 flagWarnings          -- DAP Modified
 
-main' :: GhciSettings -> PostLoadMode -> DynFlags -> [Located String] -> [Warn]
+main' :: GhciSettings -> PostLoadMode -> DynFlags -> [Located String] -> [Warn]   -- DAP Modified
       -> Ghc ()
-main' setting postLoadMode dflags0 args flagWarnings = do
+main' setting postLoadMode dflags0 args flagWarnings = do                         -- DAP Modified
   -- set the default GhcMode, HscTarget and GhcLink.  The HscTarget
   -- can be further adjusted on a module by module basis, using only
   -- the -fvia-C and -fasm flags.  If the default HscTarget is not
@@ -247,8 +248,8 @@ main' setting postLoadMode dflags0 args flagWarnings = do
        DoMake                 -> doMake srcs
        DoMkDependHS           -> doMkDependHS (map fst srcs)
        StopBefore p           -> liftIO (oneShot hsc_env p srcs)
-       DoInteractive          -> ghciUI setting hsc_env dflags6 srcs Nothing
-       DoEval exprs           -> ghciUI setting hsc_env dflags6 srcs $ Just $
+       DoInteractive          -> ghciUI setting hsc_env dflags6 srcs Nothing    -- DAP Modified
+       DoEval exprs           -> ghciUI setting hsc_env dflags6 srcs $ Just $   -- DAP Modified
                                    reverse exprs
        DoAbiHash              -> abiHash (map fst srcs)
        ShowPackages           -> liftIO $ showPackages dflags6
@@ -257,16 +258,16 @@ main' setting postLoadMode dflags0 args flagWarnings = do
 
   liftIO $ dumpFinalStats dflags6
 
-ghciUI :: GhciSettings -> HscEnv -> DynFlags -> [(FilePath, Maybe Phase)] -> Maybe [String]
+ghciUI :: GhciSettings -> HscEnv -> DynFlags -> [(FilePath, Maybe Phase)] -> Maybe [String]      -- DAP Modified
        -> Ghc ()
 #if !defined(GHCI)
-ghciUI _ _ _ _ _ =
+ghciUI _ _ _ _ _ =        -- DAP Modified
   throwGhcException (CmdLineError "not built for interactive use")
 #else
-ghciUI setting hsc_env dflags0 srcs maybe_expr = do
+ghciUI st hsc_env dflags0 srcs maybe_expr = do                    -- DAP Modified
   dflags1 <- liftIO (initializePlugins hsc_env dflags0)
   _ <- GHC.setSessionDynFlags dflags1
-  interactiveUI setting srcs maybe_expr
+  interactiveUI st srcs maybe_expr                                -- DAP Modified
 #endif
 
 -- -----------------------------------------------------------------------------

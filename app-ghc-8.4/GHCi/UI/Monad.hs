@@ -488,8 +488,6 @@ dapSaveRunStmtDeclException res = do
   mvarCtx <- dapContextGHCiState <$> getGHCiState 
 
   ctx <- liftIO $ takeMVar mvarCtx
-  let cur = DAP.runStmtDeclExceptionDAPContext ctx
-
-  liftIO $ putMVar mvarCtx ctx{DAP.runStmtDeclExceptionDAPContext = res : cur}
+  liftIO $ putMVar mvarCtx ctx{DAP.runStmtDeclExceptionDAPContext = Just res}
 
   return res

@@ -30,7 +30,7 @@ module GHCi.UI.Monad (
         mkEvalWrapper
     ) where
 
--- #include "HsVersions.h"
+-- #include "HsVersions.h"    -- DAP Modified
 
 import GHCi.UI.Info (ModInfo)
 import qualified GHC
@@ -64,6 +64,7 @@ import Control.Monad.IO.Class
 import Data.Map.Strict (Map)
 import qualified GHC.LanguageExtensions as LangExt
 
+-- DAP add.
 import qualified GHCi.DAP.Type as DAP
 import Control.Concurrent
 
@@ -344,7 +345,7 @@ printForUserPartWay doc = do
 runStmt :: String -> GHC.SingleStep -> GHCi (Maybe GHC.ExecResult)
 runStmt expr step = do
   st <- getGHCiState
-  GHC.handleSourceError (\e -> do GHC.printException e; saveRunStmtDeclException e; return Nothing) $ do
+  GHC.handleSourceError (\e -> do GHC.printException e; dapSaveRunStmtDeclException e; return Nothing) $ do
     let opts = GHC.execOptions
                   { GHC.execSourceFile = progname st
                   , GHC.execLineNumber = line_number st
@@ -361,7 +362,7 @@ runDecls decls = do
     withArgs (args st) $
       reflectGHCi x $ do
         GHC.handleSourceError (\e -> do GHC.printException e;
-                                        saveRunStmtDeclException e;
+                                        dapSaveRunStmtDeclException e;
                                         return Nothing) $ do
           r <- GHC.runDeclsWithLocation (progname st) (line_number st) decls
           return (Just r)
@@ -482,13 +483,11 @@ compileGHCiExpr expr = do
 
 -- |
 --
-saveRunStmtDeclException :: SourceError -> GHCi SourceError
-saveRunStmtDeclException res = do
+dapSaveRunStmtDeclException :: SourceError -> GHCi SourceError
+dapSaveRunStmtDeclException res = do
   mvarCtx <- dapContextGHCiState <$> getGHCiState 
 
   ctx <- liftIO $ takeMVar mvarCtx
-  let cur = DAP.runStmtDeclExceptionDAPContext ctx
-
-  liftIO $ putMVar mvarCtx ctx{DAP.runStmtDeclExceptionDAPContext = res : cur}
+  liftIO $ putMVar mvarCtx ctx{DAP.runStmtDeclExceptionDAPContext = Just res}
 
   return res

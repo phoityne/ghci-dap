@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c7f2dacd734c09081f125d779949404a2d1c0585c81ac17438042537c9a10299
+-- hash: 679715149a11f15da5f184105e38110ee62b2c608b9155bc33ab934480c6d88a
 
 name:           ghci-dap
 version:        0.0.11.0
@@ -24,7 +24,6 @@ extra-source-files:
     Changelog.md
     src-c-8.4/HsVersions.h
     src-c-8.4/PosixSource.h
-    src-c-8.6/HsVersions.h
     src-c-8.6/PosixSource.h
 
 executable ghci-dap
