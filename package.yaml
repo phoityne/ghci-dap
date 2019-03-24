@@ -1,5 +1,5 @@
 name: ghci-dap
-version: '0.0.11.0'
+version: '0.0.12.0'
 synopsis: ghci-dap is a GHCi having DAP interface.
 description: Please see README.md
 category: Development

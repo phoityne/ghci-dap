@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 679715149a11f15da5f184105e38110ee62b2c608b9155bc33ab934480c6d88a
+-- hash: e58fcf2f7d23661dd71ad8f240a0a3e9346a5f824c56af89f081468d12f6fcf7
 
 name:           ghci-dap
-version:        0.0.11.0
+version:        0.0.12.0
 synopsis:       ghci-dap is a GHCi having DAP interface.
 description:    Please see README.md
 category:       Development

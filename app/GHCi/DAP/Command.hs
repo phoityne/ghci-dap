@@ -794,7 +794,10 @@ dapContinueCmd_ args = do
     startTrace :: String -> Gi.GHCi D.StoppedEventBody
     startTrace expr = do
       clearContinueExecResult
-      Gi.traceCmd expr
+
+      -- ghci maybe throw error cause of force inspecting variable.
+      gcatch (Gi.traceCmd expr) unexpectErrHdl
+
       handleResult
     
     -- |
@@ -1011,7 +1014,10 @@ nextCmd_ :: D.NextRequestArguments
          -> Gi.GHCi (Either String D.StoppedEventBody)
 nextCmd_ _ = do
   clearContinueExecResult
-  Gi.stepLocalCmd ""
+
+  -- ghci maybe throw error cause of force inspecting variable.
+  gcatch (Gi.stepLocalCmd "") unexpectErrHdl
+
   Right <$> genStoppedEventBody
 
 
@@ -1032,7 +1038,10 @@ stepInCmd_ :: D.StepInRequestArguments
           -> Gi.GHCi (Either String D.StoppedEventBody)
 stepInCmd_ _ = do
   clearContinueExecResult
-  Gi.stepCmd ""
+
+  -- ghci maybe throw error cause of force inspecting variable.
+  gcatch (Gi.stepCmd "") unexpectErrHdl
+
   Right <$> genStoppedEventBody
 
 

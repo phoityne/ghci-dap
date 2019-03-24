@@ -169,7 +169,17 @@ liftEither (Right x) = return x
 -- |
 --
 errHdl :: SomeException -> Gi.GHCi ()
-errHdl e = pure (displayException e) >>= printDAP
+errHdl e = do
+  let msg = displayException e
+      res = Left msg :: Either String ()
+  printDAP res
+
+-- |
+--
+unexpectErrHdl :: SomeException -> Gi.GHCi ()
+unexpectErrHdl e = do
+  warnL $ "ghci says,\n" ++ show e
+
 
 -- |
 --
@@ -306,16 +316,19 @@ execResult2StoppedEventBody (G.ExecBreak{G.breakInfo = Just (BreakInfo _ _)}) = 
          }
 
 execResult2StoppedEventBody (G.ExecBreak{G.breakInfo = Nothing}) = do
-  let key = "_exception"
-  names <- G.parseName key
-  var   <- names2Var key names
+  -- have to :force _exception first.
+  -- then can show it.
+  debugL "stopped by exception"
+  gcatch (Gi.forceCmd "_exception") unexpectErrHdl
+
+  let stmt = "show _exception"
+  var <- runStmtVar stmt
+
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = "exception"
          , D.descriptionStoppedEventBody = D.valueVariable var
          , D.textStoppedEventBody = D.valueVariable var
          }
-
-
 
 
 -- |
