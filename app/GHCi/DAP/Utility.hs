@@ -379,21 +379,19 @@ names2Var key names
 name2Var :: String -> G.Name -> Gi.GHCi D.Variable
 name2Var key n = G.lookupName n >>= \case
   Nothing -> throwError $ "TyThing not found. " ++ key
-  Just ty -> tyThing2Var ty
+  Just ty -> tyThing2Var True ty
 
 --------------------------------------------------------------------------
 
 -- |
 --  TyThings https://hackage.haskell.org/package/ghc-8.2.1/docs/HscTypes.html#t:TyThing
 --
-tyThing2Var :: G.TyThing -> Gi.GHCi D.Variable
-tyThing2Var t@(AConLike c) = defTy2Var t c
-tyThing2Var t@(ATyCon c)   = defTy2Var t c
-tyThing2Var t@(ACoAxiom c) = defTy2Var t c
-tyThing2Var (AnId i) = do
-  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
-  ctx <- liftIO $ readMVar ctxMVar
-  inspectGID (isInspectVariableDAPContext ctx) i
+tyThing2Var :: Bool -> G.TyThing -> Gi.GHCi D.Variable
+tyThing2Var _ t@(AConLike c) = defTy2Var t c
+tyThing2Var _ t@(ATyCon c)   = defTy2Var t c
+tyThing2Var _ t@(ACoAxiom c) = defTy2Var t c
+tyThing2Var isInspect (AnId i) = inspectGID isInspect i
+
 
 -- |
 --

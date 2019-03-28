@@ -675,7 +675,11 @@ getBindingVariablesGlobal = do
 -- |
 --
 getBindingVariablesRoot :: [G.TyThing] -> Gi.GHCi [D.Variable]
-getBindingVariablesRoot bindings = mapM tyThing2Var bindings
+getBindingVariablesRoot bindings = do
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
+  ctx <- liftIO $ readMVar ctxMVar
+  let isInspect = isInspectVariableDAPContext ctx
+  mapM (tyThing2Var isInspect) bindings
 
     
 -- |
