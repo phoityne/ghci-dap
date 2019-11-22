@@ -9,13 +9,7 @@ import qualified GHCi.UI as Gi
 import Outputable
 import Exception
 import qualified Data.Char as CH
-import qualified Data.ByteString as BS
-import qualified Data.Text.Encoding as T
-import qualified Data.Text as T
--- import qualified Data.List as L
-import qualified Text.Read as R
 import Data.Maybe
-import Data.Word
 import Control.Monad.IO.Class
 import Control.Concurrent
 import Control.Monad
@@ -29,9 +23,11 @@ import DataCon
 import Debugger
 import qualified Data.Map as M
 
+import qualified Haskell.DAP as D
+
+import qualified GHCi.DAP
 import GHCi.DAP.Constant
 import GHCi.DAP.Type
-import qualified Haskell.DAP as D
 
 -- |
 --
@@ -103,8 +99,8 @@ isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
 
 
 -- |
---  to lowercase Windows drive letter 
--- 
+--  to lowercase Windows drive letter
+--
 drive2lower :: FilePath -> FilePath
 drive2lower (x : ':' : xs) = CH.toLower x : ':' : xs
 drive2lower xs = xs
@@ -120,13 +116,7 @@ drive2lower xs = xs
 --   RequestArgument is encoded. decode to [Word8]
 --
 readDAP :: Read a => String -> Either String a
-readDAP argsStr = case R.readEither argsStr :: Either String [Word8] of
-  Left err -> Left $ "read [Word8] failed. " ++ err ++ " : " ++ argsStr
-  Right bs -> case R.readEither (toStr bs) of
-    Left err -> Left $ "read response body failed. " ++ err ++ " : " ++  (toStr bs)
-    Right a  -> Right a 
-  where
-    toStr = T.unpack . T.decodeUtf8 . BS.pack
+readDAP = GHCi.DAP.decode
 
 
 -- |
@@ -233,7 +223,7 @@ delBreakpoint bpNoStr = do
   let curCount = Gi.break_ctr curSt
 
   Gi.deleteCmd (show bpNoStr)
-  
+
   newSt <- Gi.getGHCiState
   let newCount = Gi.break_ctr newSt
 
@@ -248,12 +238,12 @@ addBreakpoint argStr = do
   let curCount = Gi.break_ctr curSt
 
   Gi.breakCmd argStr
-  
+
   newSt <- Gi.getGHCiState
   let newCount = Gi.break_ctr newSt
       isAdded = (newCount == curCount + 1)
       locMay  =  if isAdded then Just (head (Gi.breaks newSt)) else Nothing
-  
+
   withBreakLoc locMay
 
   where
@@ -302,7 +292,7 @@ execResult2StoppedEventBody (G.ExecComplete { G.execResult = Right _ }) = do
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = "complete"
          }
-  
+
 execResult2StoppedEventBody (G.ExecComplete { G.execResult = Left (SomeException e)}) = do
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = "complete"
@@ -362,7 +352,7 @@ runStmtVar stmt = do
       throwError msg
     Just (G.ExecComplete (Left msg) _) -> throwError $ "runStmt error. " ++ show msg
     Just (G.ExecComplete (Right names) _) -> names2Var stmt names
-    
+
 
 
 -- |
@@ -442,8 +432,8 @@ getNameTypeValue :: String -> (String, String, String)
 getNameTypeValue str = (strip nameStr, strip typeStr, strip valueStr)
   where
     nameStr  = head $ words str
-    typeStr  = unwords $ takeWhile ((/=)"=") $ tail $ tail $ words str 
-    valueStr = unwords $ tail $ dropWhile ((/=)"=") $ words str 
+    typeStr  = unwords $ takeWhile ((/=)"=") $ tail $ tail $ words str
+    valueStr = unwords $ tail $ dropWhile ((/=)"=") $ words str
 
 
 -- |
@@ -519,7 +509,7 @@ getDataConstructor t defVal = do
 -- | Accessor to DAPContext
 --------------------------------------------------------------------------
 
--- | 
+-- |
 --
 clearBindingNames :: Gi.GHCi ()
 clearBindingNames = do
@@ -527,7 +517,7 @@ clearBindingNames = do
   ctx <- liftIO $ takeMVar ctxMVar
   liftIO $ putMVar ctxMVar ctx {bindingNamesDAPContext = []}
 
--- | 
+-- |
 --
 getBindingNames :: Gi.GHCi [G.Name]
 getBindingNames = do
@@ -536,7 +526,7 @@ getBindingNames = do
   return $ bindingNamesDAPContext ctx
 
 
--- | 
+-- |
 --
 clearContinueExecResult :: Gi.GHCi ()
 clearContinueExecResult = do
@@ -544,7 +534,7 @@ clearContinueExecResult = do
   ctx <- liftIO $ takeMVar ctxMVar
   liftIO $ putMVar ctxMVar ctx {continueExecResultDAPContext = Nothing}
 
--- | 
+-- |
 --
 getContinueExecResult :: Gi.GHCi (Maybe G.ExecResult)
 getContinueExecResult = do
@@ -553,7 +543,7 @@ getContinueExecResult = do
   return $ continueExecResultDAPContext ctx
 
 
--- | 
+-- |
 --
 clearRunStmtDeclException :: Gi.GHCi ()
 clearRunStmtDeclException = do
@@ -561,7 +551,7 @@ clearRunStmtDeclException = do
   ctx <- liftIO $ takeMVar ctxMVar
   liftIO $ putMVar ctxMVar ctx {runStmtDeclExceptionDAPContext = Nothing}
 
--- | 
+-- |
 --
 getRunStmtDeclException :: Gi.GHCi (Maybe SourceError)
 getRunStmtDeclException = do
