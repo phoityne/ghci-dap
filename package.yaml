@@ -1,5 +1,5 @@
 name: ghci-dap
-version: '0.0.12.0'
+version: '0.0.13.0'
 synopsis: ghci-dap is a GHCi having DAP interface.
 description: Please see README.md
 category: Development
@@ -20,6 +20,30 @@ when:
 - condition: impl(ghc < 8.4.0)
   dependencies: unsupported-ghc-version > 1 && < 1
 
+dependencies:
+- base >=4.7 && <5
+- ghc
+- ghci
+- ghc-paths
+- transformers
+- containers
+- time
+- directory
+- haskeline
+- array
+- process
+- ghc-boot
+- filepath
+- bytestring
+- deepseq
+- text
+- haskell-dap >=0.0.12.0
+
+library:
+  source-dirs: src
+  exposed-modules:
+  - GHCi.DAP
+
 executables:
   ghci-dap:
     main: Main.hs
@@ -34,29 +58,13 @@ executables:
     cc-options: -fPIC
     cpp-options: -DGHCI
     dependencies:
-    - base >=4.7 && <5
-    - ghc
-    - ghci
-    - ghc-paths
-    - transformers
-    - containers
-    - time
-    - directory
-    - haskeline
-    - array
-    - process
-    - ghc-boot
-    - filepath
-    - bytestring
-    - deepseq
-    - text
-    - haskell-dap >=0.0.12.0
+    - ghci-dap
     when:
     - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
       source-dirs: app-ghc-8.4
     - condition: (impl(ghc >=8.6.0)) && (impl(ghc <8.7.0))
       source-dirs: app-ghc-8.6
-      
+
     - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
       c-sources: src-c-8.4/hschooks.c
       include-dirs:
@@ -73,4 +81,4 @@ executables:
       else:
         dependencies:
         - unix
-        
+
