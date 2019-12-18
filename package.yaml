@@ -15,6 +15,7 @@ extra-source-files:
 - src-c-8.4/HsVersions.h
 - src-c-8.4/PosixSource.h
 - src-c-8.6/PosixSource.h
+- src-c-8.8/PosixSource.h
 
 when:
 - condition: impl(ghc < 8.4.0)
@@ -25,6 +26,7 @@ dependencies:
 - ghc
 - ghci
 - ghc-paths
+- ghc-prim
 - transformers
 - containers
 - time
@@ -59,20 +61,25 @@ executables:
     cpp-options: -DGHCI
     dependencies:
     - ghci-dap
-    when:
-    - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
-      source-dirs: app-ghc-8.4
-    - condition: (impl(ghc >=8.6.0)) && (impl(ghc <8.7.0))
-      source-dirs: app-ghc-8.6
 
-    - condition: (impl(ghc >=8.4.0)) && (impl(ghc <8.5.0))
+    when:
+    - condition: (impl(ghc >= 8.4.0)) && (impl(ghc < 8.5.0))
+      source-dirs: app-ghc-8.4
       c-sources: src-c-8.4/hschooks.c
       include-dirs:
       - src-c-8.4/
-    - condition: (impl(ghc >=8.6.0)) && (impl(ghc <8.7.0))
+
+    - condition: (impl(ghc >= 8.6.0)) && (impl(ghc < 8.7.0))
+      source-dirs: app-ghc-8.6
       c-sources: src-c-8.6/hschooks.c
       include-dirs:
       - src-c-8.6/
+
+    - condition: (impl(ghc >= 8.8.1)) && (impl(ghc < 8.9.0))
+      source-dirs: app-ghc-8.8
+      c-sources: src-c-8.8/hschooks.c
+      include-dirs:
+      - src-c-8.8/
 
     - condition: os(windows)
       then:

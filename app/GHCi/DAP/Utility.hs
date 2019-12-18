@@ -328,11 +328,13 @@ getNextIdx t@(Term ty _ _ subTerms) str = getDynFlags >>= withDynFlags
   where
     withDynFlags dflags
       | 0 == length subTerms = return 0
-      | 1 == length subTerms && isPrim (head subTerms)  = return 0
+      | 1 == length subTerms && isPrimCont (head subTerms)  = return 0
       | "[Char]" == showSDoc dflags (pprTypeForUser ty) = return 0
       | "String" == showSDoc dflags (pprTypeForUser ty) = return 0
       | otherwise = addTerm2VariableReferenceMap t str
 
+    isPrimCont Prim{} = True
+    isPrimCont _ = False
 getNextIdx t str = addTerm2VariableReferenceMap t str
 
 

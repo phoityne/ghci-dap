@@ -23,11 +23,10 @@
 module GHCi.UI (
         interactiveUI,
         GhciSettings(..),
-        -- defaultGhciSettings,     -- DAP Modified
+        defaultGhciSettings,
         ghciCommands,
         ghciWelcomeMsg,
         -- DAP add.
-        defaultGhciSettings,
         getLoadedModules,
         breakCmd,
         deleteCmd,
@@ -45,8 +44,8 @@ module GHCi.UI (
 #include "HsVersions.h"
 
 -- GHCi
-import qualified GHCi.UI.Monad as GhciMonad ( args, runStmt, runDecls )
-import GHCi.UI.Monad hiding ( args, runStmt, runDecls )
+import qualified GHCi.UI.Monad as GhciMonad ( args, runStmt, runDecls' )
+import GHCi.UI.Monad hiding ( args, runStmt )
 import GHCi.UI.Tags
 import GHCi.UI.Info
 import Debugger
@@ -64,10 +63,11 @@ import GHC ( LoadHowMuch(..), Target(..),  TargetId(..), InteractiveImport(..),
              TyThing(..), Phase, BreakIndex, Resume, SingleStep, Ghc,
              GetDocsFailure(..),
              getModuleGraph, handleSourceError )
+import HscMain (hscParseDeclsWithLocation, hscParseStmtWithLocation)
 import HsImpExp
 import HsSyn
 import HscTypes ( tyThingParent_maybe, handleFlagWarnings, getSafeMode, hsc_IC,
-                  setInteractivePrintName, hsc_dflags, msObjFilePath )
+                  setInteractivePrintName, hsc_dflags, msObjFilePath, runInteractiveHsc )
 import Module
 import Name
 import Packages ( trusted, getPackageDetails, getInstalledPackageDetails,
@@ -96,6 +96,7 @@ import NameSet
 import Panic hiding ( showException )
 import Util
 import qualified GHC.LanguageExtensions as LangExt
+import Bag (unitBag)
 
 -- Haskell Libraries
 import System.Console.Haskeline as Haskeline
@@ -184,7 +185,7 @@ defaultGhciSettings dapCtx =
 
 ghciWelcomeMsg :: String
 ghciWelcomeMsg = "GHCi, version " ++ cProjectVersion ++
-                 ": http://www.haskell.org/ghc/  :? for help"
+                 ": https://www.haskell.org/ghc/  :? for help"
 
 ghciCommands :: [Command]
 ghciCommands = map mkCmd [
@@ -453,9 +454,12 @@ interactiveUI config srcs maybe_exprs = do
    -- The initial set of DynFlags used for interactive evaluation is the same
    -- as the global DynFlags, plus -XExtendedDefaultRules and
    -- -XNoMonomorphismRestriction.
+   -- See note [Changing language extensions for interactive evaluation] #10857
    dflags <- getDynFlags
-   let dflags' = (`xopt_set` LangExt.ExtendedDefaultRules)
-               . (`xopt_unset` LangExt.MonomorphismRestriction)
+   let dflags' = (xopt_set_unlessExplSpec
+                      LangExt.ExtendedDefaultRules xopt_set)
+               . (xopt_set_unlessExplSpec
+                      LangExt.MonomorphismRestriction xopt_unset)
                $ dflags
    GHC.setInteractiveDynFlags dflags'
 
@@ -493,8 +497,8 @@ interactiveUI config srcs maybe_exprs = do
         GHCiState{ progname           = default_progname,
                    args               = default_args,
                    evalWrapper        = eval_wrapper,
-                   prompt             = default_prompt,
-                   prompt_cont        = default_prompt_cont,
+                   prompt             = defPrompt config,
+                   prompt_cont        = defPromptCont config,
                    stop               = default_stop,
                    editor             = default_editor,
                    options            = [],
@@ -508,6 +512,7 @@ interactiveUI config srcs maybe_exprs = do
                    ghci_commands      = availableCommands config,
                    ghci_macros        = [],
                    last_command       = Nothing,
+                   cmd_wrapper        = (cmdSuccess =<<),
                    cmdqueue           = [],
                    remembered_ctx     = [],
                    transient_ctx      = [],
@@ -524,6 +529,32 @@ interactiveUI config srcs maybe_exprs = do
                  }
 
    return ()
+
+{-
+Note [Changing language extensions for interactive evaluation]
+--------------------------------------------------------------
+GHCi maintains two sets of options:
+
+- The "loading options" apply when loading modules
+- The "interactive options" apply when evaluating expressions and commands
+    typed at the GHCi prompt.
+
+The loading options are mostly created in ghc/Main.hs:main' from the command
+line flags. In the function ghc/GHCi/UI.hs:interactiveUI the loading options
+are copied to the interactive options.
+
+These interactive options (but not the loading options!) are supplemented
+unconditionally by setting ExtendedDefaultRules ON and
+MonomorphismRestriction OFF. The unconditional setting of these options
+eventually overwrite settings already specified at the command line.
+
+Therefore instead of unconditionally setting ExtendedDefaultRules and
+NoMonomorphismRestriction for the interactive options, we use the function
+'xopt_set_unlessExplSpec' to first check whether the extension has already
+specified at the command line.
+
+The ghci config file has not yet been processed.
+-}
 
 resetLastErrorLocations :: GHCi ()
 resetLastErrorLocations = do
@@ -970,9 +1001,11 @@ runOneCommand eh gCmd = do
   mb_cmd1 <- maybe (noSpace gCmd) (return . Just) mb_cmd0
   case mb_cmd1 of
     Nothing -> return Nothing
-    Just c  -> ghciHandle (\e -> lift $ eh e >>= return . Just) $
-             handleSourceError printErrorAndFail
-               (doCommand c)
+    Just c  -> do
+      st <- getGHCiState
+      ghciHandle (\e -> lift $ eh e >>= return . Just) $
+        handleSourceError printErrorAndFail $
+          cmd_wrapper st $ doCommand c
                -- source error's are handled by runStmt
                -- is the handler necessary here?
   where
@@ -1011,14 +1044,14 @@ runOneCommand eh gCmd = do
     collectError = userError "unterminated multiline command :{ .. :}"
 
     -- | Handle a line of input
-    doCommand :: String -> InputT GHCi (Maybe Bool)
+    doCommand :: String -> InputT GHCi CommandResult
 
     -- command
-    doCommand stmt | (':' : cmd) <- removeSpaces stmt = do
-      result <- specialCommand cmd
-      case result of
-        True -> return Nothing
-        _    -> return $ Just True
+    doCommand stmt | stmt'@(':' : cmd) <- removeSpaces stmt = do
+      (stats, result) <- runWithStats (const Nothing) $ specialCommand cmd
+      let processResult True = Nothing
+          processResult False = Just True
+      return $ CommandComplete stmt' (processResult <$> result) stats
 
     -- haskell
     doCommand stmt = do
@@ -1030,12 +1063,13 @@ runOneCommand eh gCmd = do
           fst_line_num <- line_number <$> getGHCiState
           mb_stmt <- checkInputForLayout stmt gCmd
           case mb_stmt of
-            Nothing      -> return $ Just True
+            Nothing -> return CommandIncomplete
             Just ml_stmt -> do
               -- temporarily compensate line-number for multi-line input
-              result <- timeIt runAllocs $ lift $
+              (stats, result) <- runAndPrintStats runAllocs $ lift $
                 runStmtWithLineNum fst_line_num ml_stmt GHC.RunToCompletion
-              return $ Just (runSuccess result)
+              return $
+                CommandComplete ml_stmt (Just . runSuccess <$> result) stats
         else do -- single line input and :{ - multiline input
           last_line_num <- line_number <$> getGHCiState
           -- reconstruct first line num from last line num and stmt
@@ -1044,9 +1078,9 @@ runOneCommand eh gCmd = do
               stmt_nl_cnt2 = length [ () | '\n' <- stmt' ]
               stmt' = dropLeadingWhiteLines stmt -- runStmt doesn't like leading empty lines
           -- temporarily compensate line-number for multi-line input
-          result <- timeIt runAllocs $ lift $
+          (stats, result) <- runAndPrintStats runAllocs $ lift $
             runStmtWithLineNum fst_line_num stmt' GHC.RunToCompletion
-          return $ Just (runSuccess result)
+          return $ CommandComplete stmt' (Just . runSuccess <$> result) stats
 
     -- runStmt wrapper for temporarily overridden line-number
     runStmtWithLineNum :: Int -> String -> SingleStep
@@ -1116,50 +1150,93 @@ enqueueCommands cmds = do
 -- | Entry point to execute some haskell code from user.
 -- The return value True indicates success, as in `runOneCommand`.
 runStmt :: String -> SingleStep -> GHCi (Maybe GHC.ExecResult)
-runStmt stmt step = do
+runStmt input step = do
   dflags <- GHC.getInteractiveDynFlags
   -- In GHCi, we disable `-fdefer-type-errors`, as well as `-fdefer-type-holes`
   -- and `-fdefer-out-of-scope-variables` for **naked expressions**. The
   -- declarations and statements are not affected.
   -- See Note [Deferred type errors in GHCi] in typecheck/TcRnDriver.hs
-  if | GHC.isStmt dflags stmt    -> run_stmt
-     | GHC.isImport dflags stmt  -> run_import
+  st <- getGHCiState
+  let source = progname st
+  let line = line_number st
+
+  if | GHC.isStmt dflags input -> do
+         hsc_env <- GHC.getSession
+         mb_stmt <- liftIO (runInteractiveHsc hsc_env (hscParseStmtWithLocation source line input))
+         case mb_stmt of
+           Nothing ->
+             -- empty statement / comment
+             return (Just exec_complete)
+           Just stmt ->
+             run_stmt stmt
+
+     | GHC.isImport dflags input -> run_import
+
      -- Every import declaration should be handled by `run_import`. As GHCi
      -- in general only accepts one command at a time, we simply throw an
      -- exception when the input contains multiple commands of which at least
      -- one is an import command (see #10663).
-     | GHC.hasImport dflags stmt -> throwGhcException
+     | GHC.hasImport dflags input -> throwGhcException
        (CmdLineError "error: expecting a single import declaration")
+
+     -- Otherwise assume a declaration (or a list of declarations)
      -- Note: `GHC.isDecl` returns False on input like
      -- `data Infix a b = a :@: b; infixl 4 :@:`
      -- and should therefore not be used here.
-     | otherwise                 -> run_decl
-
+     | otherwise -> do
+         hsc_env <- GHC.getSession
+         decls <- liftIO (hscParseDeclsWithLocation hsc_env source line input)
+         run_decls decls
   where
+    exec_complete = GHC.ExecComplete (Right []) 0
+
     run_import = do
-      addImportToContext stmt
-      return (Just (GHC.ExecComplete (Right []) 0))
+      addImportToContext input
+      return (Just exec_complete)
 
-    run_decl =
-        do _ <- liftIO $ tryIO $ hFlushAll stdin
-           m_result <- GhciMonad.runDecls stmt
-           case m_result of
-               Nothing     -> return Nothing
-               Just result ->
-                 Just <$> afterRunStmt (const True)
-                            (GHC.ExecComplete (Right result) 0)
-
-    run_stmt =
-        do -- In the new IO library, read handles buffer data even if the Handle
-           -- is set to NoBuffering.  This causes problems for GHCi where there
-           -- are really two stdin Handles.  So we flush any bufferred data in
-           -- GHCi's stdin Handle here (only relevant if stdin is attached to
-           -- a file, otherwise the read buffer can't be flushed).
-           _ <- liftIO $ tryIO $ hFlushAll stdin
-           m_result <- GhciMonad.runStmt stmt step
+    run_stmt :: GhciLStmt GhcPs -> GHCi (Maybe GHC.ExecResult)
+    run_stmt stmt = do
+           m_result <- GhciMonad.runStmt stmt input step
            case m_result of
                Nothing     -> return Nothing
                Just result -> Just <$> afterRunStmt (const True) result
+
+    -- `x = y` (a declaration) should be treated as `let x = y` (a statement).
+    -- The reason is because GHCi wasn't designed to support `x = y`, but then
+    -- b98ff3 (#7253) added support for it, except it did not do a good job and
+    -- caused problems like:
+    --
+    --  - not adding the binders defined this way in the necessary places caused
+    --    `x = y` to not work in some cases (#12091).
+    --  - some GHCi command crashed after `x = y` (#15721)
+    --  - warning generation did not work for `x = y` (#11606)
+    --  - because `x = y` is a declaration (instead of a statement) differences
+    --    in generated code caused confusion (#16089)
+    --
+    -- Instead of dealing with all these problems individually here we fix this
+    -- mess by just treating `x = y` as `let x = y`.
+    run_decls :: [LHsDecl GhcPs] -> GHCi (Maybe GHC.ExecResult)
+    -- Only turn `FunBind` and `VarBind` into statements, other bindings
+    -- (e.g. `PatBind`) need to stay as decls.
+    run_decls [L l (ValD _ bind@FunBind{})] = run_stmt (mk_stmt l bind)
+    run_decls [L l (ValD _ bind@VarBind{})] = run_stmt (mk_stmt l bind)
+    -- Note that any `x = y` declarations below will be run as declarations
+    -- instead of statements (e.g. `...; x = y; ...`)
+    run_decls decls = do
+      -- In the new IO library, read handles buffer data even if the Handle
+      -- is set to NoBuffering.  This causes problems for GHCi where there
+      -- are really two stdin Handles.  So we flush any bufferred data in
+      -- GHCi's stdin Handle here (only relevant if stdin is attached to
+      -- a file, otherwise the read buffer can't be flushed).
+      _ <- liftIO $ tryIO $ hFlushAll stdin
+      m_result <- GhciMonad.runDecls' decls
+      forM m_result $ \result ->
+        afterRunStmt (const True) (GHC.ExecComplete (Right result) 0)
+
+    mk_stmt :: SrcSpan -> HsBind GhcPs -> GhciLStmt GhcPs
+    mk_stmt loc bind =
+      let l = L loc
+      in l (LetStmt noExt (l (HsValBinds noExt (ValBinds noExt (unitBag (l bind)) []))))
 
 -- | Clean up the GHCi environment after a statement has run
 afterRunStmt :: (SrcSpan -> Bool) -> GHC.ExecResult -> GHCi GHC.ExecResult
@@ -1458,8 +1535,11 @@ changeDirectory dir = do
   dflags <- getDynFlags
   -- With -fexternal-interpreter, we have to change the directory of the subprocess too.
   -- (this gives consistent behaviour with and without -fexternal-interpreter)
-  when (gopt Opt_ExternalInterpreter dflags) $
-    lift $ enqueueCommands ["System.Directory.setCurrentDirectory " ++ show dir']
+  when (gopt Opt_ExternalInterpreter dflags) $ do
+    hsc_env <- GHC.getSession
+    fhv <- compileGHCiExpr $
+      "System.Directory.setCurrentDirectory " ++ show dir'
+    liftIO $ evalIO hsc_env fhv
 
 trySuccess :: GHC.GhcMonad m => m SuccessFlag -> m SuccessFlag
 trySuccess act =
@@ -1557,7 +1637,7 @@ defineMacro overwrite s = do
         body = nlHsVar compose_RDR `mkHsApp` (nlHsPar step)
                                    `mkHsApp` (nlHsPar expr)
         tySig = mkLHsSigWcType (stringTy `nlHsFunTy` ioM)
-        new_expr = L (getLoc expr) $ ExprWithTySig tySig body
+        new_expr = L (getLoc expr) $ ExprWithTySig noExt body tySig
     hv <- GHC.compileParsedExprRemote new_expr
 
     let newCmd = Command { cmdName = macro_name
@@ -1621,7 +1701,7 @@ getGhciStepIO = do
       ioM = nlHsTyVar (getRdrName ioTyConName) `nlHsAppTy` stringTy
       body = nlHsVar (getRdrName ghciStepIoMName)
       tySig = mkLHsSigWcType (ghciM `nlHsFunTy` ioM)
-  return $ noLoc $ ExprWithTySig tySig body
+  return $ noLoc $ ExprWithTySig noExt body tySig
 
 -----------------------------------------------------------------------------
 -- :check
@@ -1696,7 +1776,9 @@ wrapDeferTypeErrors load =
     (\_ -> load)
 
 loadModule :: [(FilePath, Maybe Phase)] -> InputT GHCi SuccessFlag
-loadModule fs = timeIt (const Nothing) (loadModule' fs)
+loadModule fs = do
+  (_, result) <- runAndPrintStats (const Nothing) (loadModule' fs)
+  either (liftIO . Exception.throwIO) return result
 
 -- | @:load@ command
 loadModule_ :: [FilePath] -> InputT GHCi ()
@@ -1721,7 +1803,8 @@ loadModule' files = do
 
   -- Grab references to the currently loaded modules so that we can
   -- see if they leak.
-  leak_indicators <- if gopt Opt_GhciLeakCheck (hsc_dflags hsc_env)
+  let !dflags = hsc_dflags hsc_env
+  leak_indicators <- if gopt Opt_GhciLeakCheck dflags
     then liftIO $ getLeakIndicators hsc_env
     else return (panic "no leak indicators")
 
@@ -1733,8 +1816,8 @@ loadModule' files = do
 
   GHC.setTargets targets
   success <- doLoadAndCollectInfo False LoadAllTargets
-  when (gopt Opt_GhciLeakCheck (hsc_dflags hsc_env)) $
-    liftIO $ checkLeakIndicators (hsc_dflags hsc_env) leak_indicators
+  when (gopt Opt_GhciLeakCheck dflags) $
+    liftIO $ checkLeakIndicators dflags leak_indicators
   return success
 
 -- | @:add@ command
@@ -2960,10 +3043,12 @@ showBindings :: GHCi ()
 showBindings = do
     bindings <- GHC.getBindings
     (insts, finsts) <- GHC.getInsts
-    docs     <- mapM makeDoc (reverse bindings)
-                  -- reverse so the new ones come last
     let idocs  = map GHC.pprInstanceHdr insts
         fidocs = map GHC.pprFamInst finsts
+        binds = filter (not . isDerivedOccName . getOccName) bindings -- #12525
+        -- See Note [Filter bindings]
+    docs <- mapM makeDoc (reverse binds)
+                  -- reverse so the new ones come last
     mapM_ printForUserPartWay (docs ++ idocs ++ fidocs)
   where
     makeDoc (AnId i) = pprTypeAndContents i
@@ -2983,6 +3068,29 @@ showBindings = do
 
 printTyThing :: TyThing -> GHCi ()
 printTyThing tyth = printForUser (pprTyThing showToHeader tyth)
+
+{-
+Note [Filter bindings]
+~~~~~~~~~~~~~~~~~~~~~~
+
+If we don't filter the bindings returned by the function GHC.getBindings,
+then the :show bindings command will also show unwanted bound names,
+internally generated by GHC, eg:
+    $tcFoo :: GHC.Types.TyCon = _
+    $trModule :: GHC.Types.Module = _ .
+
+The filter was introduced as a fix for Trac #12525 [1]. Comment:1 [2] to this
+ticket contains an analysis of the situation and suggests the solution
+implemented above.
+
+The same filter was also implemented to fix Trac #11051 [3]. See the
+Note [What to show to users] in compiler/main/InteractiveEval.hs
+
+[1] https://ghc.haskell.org/trac/ghc/ticket/12525
+[2] https://ghc.haskell.org/trac/ghc/ticket/12525#comment:1
+[3] https://ghc.haskell.org/trac/ghc/ticket/11051
+-}
+
 
 showBkptTable :: GHCi ()
 showBkptTable = do
@@ -3386,7 +3494,7 @@ historyCmd arg
                                  (map (bold . hcat . punctuate colon . map text) names)
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
-        
+
         DAP.setStackTraceResult r took
 
 bold :: SDoc -> SDoc
