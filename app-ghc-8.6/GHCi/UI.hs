@@ -39,7 +39,8 @@ module GHCi.UI (
         stepLocalCmd,
         runStmt,
         toBreakIdAndLocation,
-        forceCmd
+        forceCmd,
+        setContext
     ) where
 
 #include "HsVersions.h"
@@ -3386,7 +3387,7 @@ historyCmd arg
                                  (map (bold . hcat . punctuate colon . map text) names)
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
-        
+
         DAP.setStackTraceResult r took
 
 bold :: SDoc -> SDoc

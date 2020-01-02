@@ -32,18 +32,19 @@ import qualified Haskell.DAP as D
 --
 dapCommands :: [Gi.Command]
 dapCommands = map mkCmd [
-    ("dap-launch",                   dapCmdRunner launchCmd,        noCompletion)
-  , ("dap-set-breakpoints",          dapCmdRunner setBpCmd,         noCompletion)
-  , ("dap-set-function-breakpoints", dapCmdRunner setFuncBpsCmd,    noCompletion)
-  , ("dap-set-function-breakpoint",  dapCmdRunner setFuncBpCmd,     noCompletion)
-  , ("dap-delete-breakpoint",        dapCmdRunner delBpCmd,         noCompletion)
-  , ("dap-stacktrace",               dapCmdRunner dapStackTraceCmd, noCompletion)
-  , ("dap-scopes",                   dapCmdRunner dapScopesCmd,     noCompletion)
-  , ("dap-variables",                dapCmdRunner dapVariablesCmd,  noCompletion)
-  , ("dap-evaluate",                 dapCmdRunner dapEvalCmd,       noCompletion)
-  , ("dap-continue",                 dapCmdRunner dapContinueCmd,   noCompletion)
-  , ("dap-next",                     dapCmdRunner nextCmd,          noCompletion)
-  , ("dap-step-in",                  dapCmdRunner stepInCmd,        noCompletion)
+    ("dap-launch",                   dapCmdRunner launchCmd,         noCompletion)
+  , ("dap-context-modules",          dapCmdRunner contextModulesCmd, noCompletion)
+  , ("dap-set-breakpoints",          dapCmdRunner setBpCmd,          noCompletion)
+  , ("dap-set-function-breakpoints", dapCmdRunner setFuncBpsCmd,     noCompletion)
+  , ("dap-set-function-breakpoint",  dapCmdRunner setFuncBpCmd,      noCompletion)
+  , ("dap-delete-breakpoint",        dapCmdRunner delBpCmd,          noCompletion)
+  , ("dap-stacktrace",               dapCmdRunner dapStackTraceCmd,  noCompletion)
+  , ("dap-scopes",                   dapCmdRunner dapScopesCmd,      noCompletion)
+  , ("dap-variables",                dapCmdRunner dapVariablesCmd,   noCompletion)
+  , ("dap-evaluate",                 dapCmdRunner dapEvalCmd,        noCompletion)
+  , ("dap-continue",                 dapCmdRunner dapContinueCmd,    noCompletion)
+  , ("dap-next",                     dapCmdRunner nextCmd,           noCompletion)
+  , ("dap-step-in",                  dapCmdRunner stepInCmd,         noCompletion)
   ]
   where
     mkCmd :: (String, String -> InputT Gi.GHCi Bool, CompletionFunc Gi.GHCi)
@@ -117,6 +118,29 @@ launchCmd_ arg = do
       ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
       ctx <- liftIO $ takeMVar ctxMVar
       liftIO $ putMVar ctxMVar ctx {isInspectVariableDAPContext = isForce}
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-context-modules
+------------------------------------------------------------------------------------------------
+-- |
+--
+contextModulesCmd :: String -> Gi.GHCi ()
+contextModulesCmd _ = flip gcatch errHdl $ do
+  contextModulesCmd_ >>= printDAP
+
+-- |
+--
+contextModulesCmd_ :: Gi.GHCi (Either String ())
+contextModulesCmd_ = do
+  modSums <- Gi.getLoadedModules
+  let modNames = map ms_mod_name modSums
+      modNameStrs = map G.moduleNameString modNames
+
+  Gi.setContext modNames []
+  infoL $ "context modules. " ++ show modNameStrs
+
+  return $ Right ()
 
 
 ------------------------------------------------------------------------------------------------
@@ -762,8 +786,12 @@ dapEvalCmd_ args = case D.contextEvaluateRequestArguments args of
       let nameStr = D.expressionEvaluateRequestArguments args
       names <- G.parseName nameStr
       var   <- names2Var nameStr names
+
+      let varStr = if "_" == D.valueVariable var
+                     then "_ :: " ++ D.typeVariable var
+                     else D.valueVariable var
       return $ Right D.defaultEvaluateResponseBody {
-               D.resultEvaluateResponseBody = D.valueVariable var
+               D.resultEvaluateResponseBody = varStr
              , D.typeEvaluateResponseBody   = D.typeVariable var
              , D.variablesReferenceEvaluateResponseBody = D.variablesReferenceVariable var
              }
