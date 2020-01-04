@@ -1,3 +1,5 @@
+20200105 ghci-dap-0.0.13.0
+  * [INFO] support haskell-dap-0.0.14.0.
 
 
 20190402 ghci-dap-0.0.12.0
