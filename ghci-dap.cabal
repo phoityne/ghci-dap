@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ec6021572aae1c61dc822e9fed40a61315d89413302b3804ead5a4048d3e63c8
+-- hash: f239daff9d6939cabaacf0d6379858bedb5d7bc83c67a25c17a6c9cbeaa26d2c
 
 name:           ghci-dap
 version:        0.0.13.0
@@ -48,7 +48,7 @@ library
     , ghc-prim
     , ghci
     , haskeline
-    , haskell-dap >=0.0.12.0
+    , haskell-dap >=0.0.14.0
     , process
     , text
     , time
@@ -87,7 +87,7 @@ executable ghci-dap
     , ghci
     , ghci-dap
     , haskeline
-    , haskell-dap >=0.0.12.0
+    , haskell-dap >=0.0.14.0
     , process
     , text
     , time

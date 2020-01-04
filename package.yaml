@@ -39,7 +39,7 @@ dependencies:
 - bytestring
 - deepseq
 - text
-- haskell-dap >=0.0.12.0
+- haskell-dap >= 0.0.14.0
 
 library:
   source-dirs: src
