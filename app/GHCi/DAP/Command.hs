@@ -839,9 +839,9 @@ dapContinueCmd_ args = do
     --
     handleResult :: Gi.GHCi D.StoppedEventBody
     handleResult = hasBreaked >>= \case
-      False -> genStoppedEventBody
+      False -> genStoppedEventBody "breakpoint"
       True  -> isBreakthrough >>= \case
-        False -> genStoppedEventBody
+        False -> genStoppedEventBody "breakpoint"
         True  -> continue
 
     -- |
@@ -1048,7 +1048,7 @@ nextCmd_ _ = do
   -- ghci maybe throw error cause of force inspecting variable.
   gcatch (Gi.stepLocalCmd "") unexpectErrHdl
 
-  Right <$> genStoppedEventBody
+  Right <$> genStoppedEventBody "step"
 
 
 ------------------------------------------------------------------------------------------------
@@ -1072,6 +1072,6 @@ stepInCmd_ _ = do
   -- ghci maybe throw error cause of force inspecting variable.
   gcatch (Gi.stepCmd "") unexpectErrHdl
 
-  Right <$> genStoppedEventBody
+  Right <$> genStoppedEventBody "step"
 
 

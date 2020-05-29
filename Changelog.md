@@ -1,3 +1,7 @@
+20201231 ghci-dap-0.0.15.0
+  * [FIX] hda issue #12.
+
+
 20200209 ghci-dap-0.0.14.0
   * [INFO] support ghc-8.8.2.
 

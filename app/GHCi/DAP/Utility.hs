@@ -279,33 +279,33 @@ addBreakpoint argStr = do
 
 -- |
 --
-genStoppedEventBody :: Gi.GHCi D.StoppedEventBody
-genStoppedEventBody = getContinueExecResult >>= \case
+genStoppedEventBody :: String -> Gi.GHCi D.StoppedEventBody
+genStoppedEventBody reason = getContinueExecResult >>= \case
   Nothing -> throwError "ExecResult not found."
-  Just er -> execResult2StoppedEventBody er
+  Just er -> execResult2StoppedEventBody reason er
 
 
 -- |
 --
-execResult2StoppedEventBody :: G.ExecResult -> Gi.GHCi D.StoppedEventBody
-execResult2StoppedEventBody (G.ExecComplete { G.execResult = Right _ }) = do
+execResult2StoppedEventBody :: String -> G.ExecResult -> Gi.GHCi D.StoppedEventBody
+execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Right _ }) = do
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = "complete"
          }
 
-execResult2StoppedEventBody (G.ExecComplete { G.execResult = Left (SomeException e)}) = do
+execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Left (SomeException e)}) = do
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = "complete"
          , D.descriptionStoppedEventBody = show e
          , D.textStoppedEventBody = show e
          }
 
-execResult2StoppedEventBody (G.ExecBreak{G.breakInfo = Just (BreakInfo _ _)}) = do
+execResult2StoppedEventBody reason (G.ExecBreak{G.breakInfo = Just (BreakInfo _ _)}) = do
   return D.defaultStoppedEventBody {
-           D.reasonStoppedEventBody = "breakpoint"
+           D.reasonStoppedEventBody = reason
          }
 
-execResult2StoppedEventBody (G.ExecBreak{G.breakInfo = Nothing}) = do
+execResult2StoppedEventBody _ (G.ExecBreak{G.breakInfo = Nothing}) = do
   -- have to :force _exception first.
   -- then can show it.
   debugL "stopped by exception"
