@@ -240,9 +240,10 @@ addBreakpoint argStr = do
   Gi.breakCmd argStr
 
   newSt <- Gi.getGHCiState
+  newBl <- Gi.dapLookupMaxBreakLocation
   let newCount = Gi.break_ctr newSt
       isAdded = (newCount == curCount + 1)
-      locMay  =  if isAdded then Just (head (Gi.breaks newSt)) else Nothing
+      locMay  =  if isAdded then newBl else Nothing
 
   withBreakLoc locMay
 

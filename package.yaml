@@ -39,6 +39,7 @@ dependencies:
 - bytestring
 - deepseq
 - text
+- exceptions
 - haskell-dap >= 0.0.14.0
 
 library:
@@ -58,7 +59,7 @@ executables:
     - -fno-warn-unused-do-bind
     - -fno-warn-name-shadowing
     cc-options: -fPIC
-    cpp-options: -DGHCI
+    cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER
     dependencies:
     - ghci-dap
 
@@ -80,6 +81,9 @@ executables:
       c-sources: src-c-8.8/hschooks.c
       include-dirs:
       - src-c-8.8/
+
+    - condition: (impl(ghc >= 8.10.1)) && (impl(ghc < 8.11.0))
+      source-dirs: app-ghc-8.10
 
     - condition: os(windows)
       then:

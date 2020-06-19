@@ -10,18 +10,18 @@ import InteractiveEval
 
 import GHCi.DAP.Type
 
--- | 
+-- |
 --
-setStackTraceResult :: G.Resume -> [G.History] -> Gi.GHCi ()
+setStackTraceResult :: Gi.GhciMonad m => G.Resume -> [G.History] -> m ()
 setStackTraceResult r hs = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ takeMVar ctxMVar
   liftIO $ putMVar ctxMVar ctx {stackTraceResultDAPContext = Just (r, hs)}
 
 
--- | 
+-- |
 --
-setBindingNames :: [G.Name] -> Gi.GHCi ()
+setBindingNames :: Gi.GhciMonad m => [G.Name] -> m ()
 setBindingNames names = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ takeMVar ctxMVar
@@ -32,7 +32,7 @@ setBindingNames names = do
 --
 saveTraceCmdExecResult :: Maybe ExecResult -> Gi.GHCi (Maybe ExecResult)
 saveTraceCmdExecResult res = do
-  ctxMVar <- Gi.dapContextGHCiState  <$> Gi.getGHCiState 
+  ctxMVar <- Gi.dapContextGHCiState  <$> Gi.getGHCiState
 
   ctx <- liftIO $ takeMVar ctxMVar
   let cur = traceCmdExecResultDAPContext ctx
@@ -46,7 +46,7 @@ saveTraceCmdExecResult res = do
 --
 saveDoContinueExecResult :: ExecResult -> Gi.GHCi ExecResult
 saveDoContinueExecResult res = do
-  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState 
+  ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
 
   ctx <- liftIO $ takeMVar ctxMVar
   let cur = doContinueExecResultDAPContext ctx
@@ -58,9 +58,9 @@ saveDoContinueExecResult res = do
 
 -- |
 --
-setContinueExecResult :: Maybe ExecResult -> Gi.GHCi (Maybe ExecResult)
+setContinueExecResult :: Gi.GhciMonad m => Maybe ExecResult -> m (Maybe ExecResult)
 setContinueExecResult res = do
-  ctxMVar <- Gi.dapContextGHCiState  <$> Gi.getGHCiState 
+  ctxMVar <- Gi.dapContextGHCiState  <$> Gi.getGHCiState
   ctx <- liftIO $ takeMVar ctxMVar
   liftIO $ putMVar ctxMVar ctx{continueExecResultDAPContext = res}
   return res

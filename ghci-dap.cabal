@@ -1,13 +1,13 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.33.0.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e6755e1213c6a6f165421137256b97d61d59fc8bc401d30aab347e3bba776b51
+-- hash: 7ea50fed56196cc80b89619ba9fca66479e08c65395823fcc9db6e43b16c786e
 
 name:           ghci-dap
-version:        0.0.14.0
+version:        0.0.15.0
 synopsis:       ghci-dap is a GHCi having DAP interface.
 description:    Please see README.md
 category:       Development
@@ -41,6 +41,7 @@ library
     , containers
     , deepseq
     , directory
+    , exceptions
     , filepath
     , ghc
     , ghc-boot
@@ -70,7 +71,7 @@ executable ghci-dap
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall -fno-warn-unused-do-bind -fno-warn-name-shadowing
-  cpp-options: -DGHCI
+  cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER
   cc-options: -fPIC
   build-depends:
       array
@@ -79,6 +80,7 @@ executable ghci-dap
     , containers
     , deepseq
     , directory
+    , exceptions
     , filepath
     , ghc
     , ghc-boot
@@ -137,6 +139,17 @@ executable ghci-dap
         src-c-8.8/
     c-sources:
         src-c-8.8/hschooks.c
+  if (impl(ghc >= 8.10.1)) && (impl(ghc < 8.11.0))
+    other-modules:
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCi.Util
+        GHCMain
+    hs-source-dirs:
+        app-ghc-8.10
   if os(windows)
     build-depends:
         Win32
