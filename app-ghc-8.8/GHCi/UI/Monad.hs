@@ -31,7 +31,8 @@ module GHCi.UI.Monad (
         initInterpBuffering,
         turnOffBuffering, turnOffBuffering_,
         flushInterpBuffers,
-        mkEvalWrapper
+        mkEvalWrapper,
+        dapLookupMaxBreakLocation  -- DAP added.
     ) where
 
 -- #include "HsVersions.h"    -- DAP Modified
@@ -550,10 +551,19 @@ compileGHCiExpr expr = runInternal $ GHC.compileExprRemote expr
 --
 dapSaveRunStmtDeclException :: SourceError -> GHCi SourceError
 dapSaveRunStmtDeclException res = do
-  mvarCtx <- dapContextGHCiState <$> getGHCiState 
+  mvarCtx <- dapContextGHCiState <$> getGHCiState
 
   ctx <- liftIO $ takeMVar mvarCtx
   liftIO $ putMVar mvarCtx ctx{DAP.runStmtDeclExceptionDAPContext = Just res}
 
   return res
+
+-- |
+--
+dapLookupMaxBreakLocation :: GHCi (Maybe (Int, BreakLocation))
+dapLookupMaxBreakLocation = do
+  newSt <- getGHCiState
+  let l = breaks newSt
+  if length l == 0 then return Nothing
+    else return $ Just $ head l
 

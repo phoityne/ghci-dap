@@ -159,8 +159,7 @@ import GHCi.Leak
 -- DAP
 ------------------------------------------------------------------------------
 import qualified GHCi.DAP.Type as DAP
-import qualified GHCi.DAP.UI as DAP
-
+import Control.Concurrent
 -----------------------------------------------------------------------------
 
 data GhciSettings = GhciSettings {
@@ -3326,7 +3325,7 @@ traceCmd arg
   = withSandboxOnly ":trace" $ tr arg
   where
   tr []         = doContinue (const True) GHC.RunAndLogSteps
-  tr expression = runStmt expression GHC.RunAndLogSteps >>= DAP.setContinueExecResult >> return ()
+  tr expression = runStmt expression GHC.RunAndLogSteps >>= setContinueExecResult >> return ()   -- DAP added.
 
 continueCmd :: String -> GHCi ()
 continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC.RunToCompletion
@@ -3335,7 +3334,7 @@ continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC
 doContinue :: (SrcSpan -> Bool) -> SingleStep -> GHCi ()
 doContinue pre step = do
   runResult <- resume pre step
-  DAP.setContinueExecResult (Just runResult)
+  setContinueExecResult (Just runResult)  -- DAP added.
   _ <- afterRunStmt pre runResult
   return ()
 
@@ -3388,7 +3387,7 @@ historyCmd arg
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
 
-        DAP.setStackTraceResult r took
+        setStackTraceResult r took   -- DAP added
 
 bold :: SDoc -> SDoc
 bold c | do_bold   = text start_bold <> c <> text end_bold
@@ -3407,7 +3406,7 @@ backCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
-      DAP.setBindingNames names
+      setBindingNames names  -- DAP added.
 
 forwardCmd :: String -> GHCi ()
 forwardCmd arg
@@ -3425,7 +3424,7 @@ forwardCmd arg
       st <- getGHCiState
       enqueueCommands [stop st]
 
-      DAP.setBindingNames names
+      setBindingNames names  -- DAP added.
 
 -- handle the "break" command
 breakCmd :: String -> GHCi ()
@@ -3914,3 +3913,33 @@ wantNameFromInterpretedModule noCanDo str and_then =
                then noCanDo n $ text "module " <> ppr modl <>
                                 text " is not interpreted"
                else and_then n
+
+------------------------------------------------------------------------------------------------
+--  DAP Utility
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+setStackTraceResult :: Resume -> [GHC.History] -> GHCi ()
+setStackTraceResult r hs = do
+  ctxMVar <- dapContextGHCiState <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx {DAP.stackTraceResultDAPContext = Just (r, hs)}
+
+
+-- |
+--
+setBindingNames :: [Name] -> GHCi ()
+setBindingNames names = do
+  ctxMVar <- dapContextGHCiState <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx {DAP.bindingNamesDAPContext = names}
+
+-- |
+--
+setContinueExecResult :: Maybe GHC.ExecResult -> GHCi (Maybe GHC.ExecResult)
+setContinueExecResult res = do
+  ctxMVar <- dapContextGHCiState  <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx{DAP.continueExecResultDAPContext = res}
+  return res

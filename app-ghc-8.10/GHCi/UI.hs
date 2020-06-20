@@ -160,8 +160,7 @@ import GHCi.Leak
 -- DAP
 ------------------------------------------------------------------------------
 import qualified GHCi.DAP.Type as DAP
-import qualified GHCi.DAP.UI as DAP
-
+import Control.Concurrent
 -----------------------------------------------------------------------------
 
 data GhciSettings = GhciSettings {
@@ -3526,7 +3525,7 @@ traceCmd arg
   = withSandboxOnly ":trace" $ tr arg
   where
   tr []         = doContinue (const True) GHC.RunAndLogSteps
-  tr expression = runStmt expression GHC.RunAndLogSteps >>= DAP.setContinueExecResult >> return ()
+  tr expression = runStmt expression GHC.RunAndLogSteps >>= setContinueExecResult >> return ()   -- DAP added
 
 continueCmd :: GhciMonad m => String -> m ()
 continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC.RunToCompletion
@@ -3534,7 +3533,7 @@ continueCmd = noArgs $ withSandboxOnly ":continue" $ doContinue (const True) GHC
 doContinue :: GhciMonad m => (SrcSpan -> Bool) -> SingleStep -> m ()
 doContinue pre step = do
   runResult <- resume pre step
-  DAP.setContinueExecResult (Just runResult)
+  setContinueExecResult (Just runResult)   -- DAP added.
   _ <- afterRunStmt pre runResult
   return ()
 
@@ -3636,7 +3635,7 @@ historyCmd arg
                                  (map (bold . hcat . punctuate colon . map text) names)
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
-        DAP.setStackTraceResult r took
+        setStackTraceResult r took   -- DAP added.
 
 bold :: SDoc -> SDoc
 bold c | do_bold   = text start_bold <> c <> text end_bold
@@ -3655,7 +3654,7 @@ backCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
-      DAP.setBindingNames names
+      setBindingNames names      -- DAP added.
 
 forwardCmd :: GhciMonad m => String -> m ()
 forwardCmd arg
@@ -3672,7 +3671,7 @@ forwardCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
-      DAP.setBindingNames names
+      setBindingNames names   -- DAP added.
 
 -- handle the "break" command
 breakCmd :: GhciMonad m => String -> m ()
@@ -4169,3 +4168,36 @@ clearAllTargets = discardActiveBreakPoints
                 >> GHC.setTargets []
                 >> GHC.load LoadAllTargets
                 >> pure ()
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Utility
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+setStackTraceResult :: GhciMonad m => Resume -> [GHC.History] -> m ()
+setStackTraceResult r hs = do
+  ctxMVar <- dapContextGHCiState <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx {DAP.stackTraceResultDAPContext = Just (r, hs)}
+
+
+-- |
+--
+setBindingNames :: GhciMonad m => [Name] -> m ()
+setBindingNames names = do
+  ctxMVar <- dapContextGHCiState <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx {DAP.bindingNamesDAPContext = names}
+
+
+-- |
+--
+setContinueExecResult :: GhciMonad m => Maybe GHC.ExecResult -> m (Maybe GHC.ExecResult)
+setContinueExecResult res = do
+  ctxMVar <- dapContextGHCiState  <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx{DAP.continueExecResultDAPContext = res}
+  return res
+

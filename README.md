@@ -1,7 +1,7 @@
 
 # ghci-dap
 
-A GHCi having [DAP](https://code.visualstudio.com/docs/extensions/example-debuggers) interface.
+A GHCi with [DAP](https://code.visualstudio.com/docs/extensions/example-debuggers) machine interface.
 
 
 ![101_deploy.png](https://raw.githubusercontent.com/phoityne/haskell-debug-adapter/master/docs/design/101_deploy.png)
