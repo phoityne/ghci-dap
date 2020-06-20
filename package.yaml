@@ -12,13 +12,11 @@ bug-reports: https://github.com/phoityne/ghci-dap/issues
 extra-source-files:
 - README.md
 - Changelog.md
-- src-c-8.4/HsVersions.h
-- src-c-8.4/PosixSource.h
 - src-c-8.6/PosixSource.h
 - src-c-8.8/PosixSource.h
 
 when:
-- condition: impl(ghc < 8.4.0)
+- condition: impl(ghc < 8.6.0)
   dependencies: unsupported-ghc-version > 1 && < 1
 
 dependencies:
@@ -40,7 +38,7 @@ dependencies:
 - deepseq
 - text
 - exceptions
-- haskell-dap >= 0.0.14.0
+- haskell-dap >= 0.0.15.0
 
 library:
   source-dirs: src
@@ -59,17 +57,11 @@ executables:
     - -fno-warn-unused-do-bind
     - -fno-warn-name-shadowing
     cc-options: -fPIC
-    cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER
+    cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER -DGHC_LOADED_INTO_GHCI
     dependencies:
     - ghci-dap
 
     when:
-    - condition: (impl(ghc >= 8.4.0)) && (impl(ghc < 8.5.0))
-      source-dirs: app-ghc-8.4
-      c-sources: src-c-8.4/hschooks.c
-      include-dirs:
-      - src-c-8.4/
-
     - condition: (impl(ghc >= 8.6.0)) && (impl(ghc < 8.7.0))
       source-dirs: app-ghc-8.6
       c-sources: src-c-8.6/hschooks.c

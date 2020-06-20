@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7ea50fed56196cc80b89619ba9fca66479e08c65395823fcc9db6e43b16c786e
+-- hash: ec43e3e994855e3111dc5b09630f3296eb0c242fc107b475a07fac506010e6d4
 
 name:           ghci-dap
 version:        0.0.15.0
@@ -22,8 +22,6 @@ build-type:     Simple
 extra-source-files:
     README.md
     Changelog.md
-    src-c-8.4/HsVersions.h
-    src-c-8.4/PosixSource.h
     src-c-8.6/PosixSource.h
     src-c-8.8/PosixSource.h
 
@@ -49,12 +47,12 @@ library
     , ghc-prim
     , ghci
     , haskeline
-    , haskell-dap >=0.0.14.0
+    , haskell-dap >=0.0.15.0
     , process
     , text
     , time
     , transformers
-  if impl(ghc < 8.4.0)
+  if impl(ghc < 8.6.0)
     build-depends:
         unsupported-ghc-version >1 && <1
   default-language: Haskell2010
@@ -71,7 +69,7 @@ executable ghci-dap
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall -fno-warn-unused-do-bind -fno-warn-name-shadowing
-  cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER
+  cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER -DGHC_LOADED_INTO_GHCI
   cc-options: -fPIC
   build-depends:
       array
@@ -89,27 +87,14 @@ executable ghci-dap
     , ghci
     , ghci-dap
     , haskeline
-    , haskell-dap >=0.0.14.0
+    , haskell-dap >=0.0.15.0
     , process
     , text
     , time
     , transformers
-  if impl(ghc < 8.4.0)
+  if impl(ghc < 8.6.0)
     build-depends:
         unsupported-ghc-version >1 && <1
-  if (impl(ghc >= 8.4.0)) && (impl(ghc < 8.5.0))
-    other-modules:
-        GHCi.UI
-        GHCi.UI.Info
-        GHCi.UI.Monad
-        GHCi.UI.Tags
-        GHCMain
-    hs-source-dirs:
-        app-ghc-8.4
-    include-dirs:
-        src-c-8.4/
-    c-sources:
-        src-c-8.4/hschooks.c
   if (impl(ghc >= 8.6.0)) && (impl(ghc < 8.7.0))
     other-modules:
         GHCi.Leak
