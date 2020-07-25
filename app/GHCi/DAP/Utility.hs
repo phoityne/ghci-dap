@@ -262,7 +262,7 @@ addBreakpoint argStr = do
           D.nameSource             = (Just . G.moduleNameString . G.moduleName . Gi.breakModule) bpLoc
         , D.pathSource             = (unpackFS . G.srcSpanFile) dat
         , D.sourceReferenceSource  = Nothing
-        , D.origineSource          = Nothing
+        , D.originSource           = Nothing
         }
       , D.lineBreakpoint      = G.srcSpanStartLine dat
       , D.columnBreakpoint    = G.srcSpanStartCol dat
