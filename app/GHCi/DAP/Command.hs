@@ -207,22 +207,19 @@ setBpCmd_ args =
       modSums <- Gi.getLoadedModules
       let modPaths = map takeModPath modSums
 
-      case filter (isPathMatch srcPath) modPaths of
-        ((m, p):[]) -> do
-          debugL $ "<dapSetBreakpointsCommand> " ++ p ++ " -> " ++ m
+      findModule srcPath modPaths >>= \case
+        Just (m, p) -> do
+          debugL $ "<getModule> " ++ p ++ " -> " ++ m
           return m
 
-        _ -> throwError $ "loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+        Nothing -> throwError $ "<getModule> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+
 
     -- |
     --
-    takeModPath :: ModSummary -> (String, FilePath)
+    takeModPath :: ModSummary -> (ModuleName, FilePath)
     takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
 
-    -- |
-    --
-    isPathMatch :: FilePath -> (String, FilePath) -> Bool
-    isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
 
     -- |
     --
@@ -376,11 +373,12 @@ setFuncBpCmd_ (startup, funcBP) = do
       modSums <- Gi.getLoadedModules
       let modPaths = map takeModPath modSums
 
-      case filter (isPathMatch startup) modPaths of
-        ((m, p):[]) -> do
-          debugL $ "<dapSetFuncBreakpointCommand> " ++ p ++ " -> " ++ m
+      findModule startup modPaths >>= \case
+        Just (m, p) -> do
+          debugL $ "<getModuleByFile> " ++ p ++ " -> " ++ m
           return m
-        _ -> throwError $ "loaded module can not find from path. <" ++ startup ++ "> " ++  show modPaths
+
+        Nothing -> throwError $ "<getModuleByFile> loaded module can not find from path. <" ++ startup ++ "> " ++  show modPaths
 
     -- |
     --

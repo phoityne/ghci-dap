@@ -22,6 +22,7 @@ import DynFlags
 import DataCon
 import Debugger
 import qualified Data.Map as M
+import System.Directory
 
 import qualified Haskell.DAP as D
 
@@ -94,8 +95,20 @@ takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
 
 -- |
 --
-isPathMatch :: FilePath -> (String, FilePath) -> Bool
-isPathMatch srcPath (_, p) = (nzPath srcPath) == (nzPath p)
+isPathMatch :: FilePath -> ModuleName -> Gi.GHCi Bool
+isPathMatch srcPath modPath = do
+  srcAbs <- liftIO $ canonicalizePath srcPath
+  modAbs <- liftIO $ canonicalizePath modPath
+  return $ srcAbs == modAbs
+
+
+-- |
+--
+findModule :: FilePath -> [(ModuleName, FilePath)] -> Gi.GHCi (Maybe (ModuleName, FilePath))
+findModule _ [] = return Nothing
+findModule srcPath ((m, p):xs) = isPathMatch srcPath p >>= \case
+  True -> return $ Just (m, p)
+  False -> findModule srcPath xs
 
 
 -- |
