@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 28fcb94e0e43db8e7a27c706ba124b28ef3d676efd7fd671d5004144a13f1d46
+-- hash: 15a7be4b5521b2781bb0f8a21d79395fe0a06f229aecc0301e63948cfa3e7567
 
 name:           ghci-dap
-version:        0.0.15.0
+version:        0.0.16.0
 synopsis:       ghci-dap is a GHCi having DAP interface.
 description:    Please see README.md
 category:       Development
@@ -134,6 +134,9 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-8.10
+  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.1.0))
+    hs-source-dirs:
+        app-ghc-9.0.1
   if os(windows)
     build-depends:
         Win32

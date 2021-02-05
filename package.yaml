@@ -1,5 +1,5 @@
 name: ghci-dap
-version: '0.0.15.0'
+version: '0.0.16.0'
 synopsis: ghci-dap is a GHCi having DAP interface.
 description: Please see README.md
 category: Development
@@ -76,6 +76,9 @@ executables:
 
     - condition: (impl(ghc >= 8.10.1)) && (impl(ghc < 8.11.0))
       source-dirs: app-ghc-8.10
+
+    - condition: (impl(ghc >= 9.0.1)) && (impl(ghc < 9.1.0))
+      source-dirs: app-ghc-9.0.1
 
     - condition: os(windows)
       then:
