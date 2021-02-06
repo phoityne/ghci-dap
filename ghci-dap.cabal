@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 15a7be4b5521b2781bb0f8a21d79395fe0a06f229aecc0301e63948cfa3e7567
+-- hash: 0d99f03e01a79a19dd940949c00146b8b80fd4555a2b753078e07bfb379c6153
 
 name:           ghci-dap
 version:        0.0.16.0
@@ -135,8 +135,16 @@ executable ghci-dap
     hs-source-dirs:
         app-ghc-8.10
   if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.1.0))
+    other-modules:
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCi.Util
+        GHCMain
     hs-source-dirs:
-        app-ghc-9.0.1
+        app-ghc-9.0
   if os(windows)
     build-depends:
         Win32

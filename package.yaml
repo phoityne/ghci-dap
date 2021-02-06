@@ -78,7 +78,7 @@ executables:
       source-dirs: app-ghc-8.10
 
     - condition: (impl(ghc >= 9.0.1)) && (impl(ghc < 9.1.0))
-      source-dirs: app-ghc-9.0.1
+      source-dirs: app-ghc-9.0
 
     - condition: os(windows)
       then:
