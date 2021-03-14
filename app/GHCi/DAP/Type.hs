@@ -1,11 +1,14 @@
+{-# LANGUAGE CPP #-}
+
 module GHCi.DAP.Type where
 
 import qualified GHC as G
-import RtClosureInspect
 
 import qualified Data.Map as M
 import Control.Concurrent
-import HscTypes
+
+import qualified GHCi.GhcApiCompat as GAC
+
 
 import qualified Haskell.DAP as D
 
@@ -48,13 +51,13 @@ data SourceBreakpointInfo = SourceBreakpointInfo {
 -- |
 --
 data DAPContext = DAPContext {
-    variableReferenceMapDAPContext :: M.Map Int (Term, EvalString)
+    variableReferenceMapDAPContext :: M.Map Int (GAC.Term, EvalString)
   , bindingDAPContext              :: [G.TyThing]
   , bindingGlobalDAPContext        :: [G.TyThing]
   , frameIdDAPContext              :: Int
   , srcBPsDAPContext               :: M.Map Int SourceBreakpointInfo
   , funcBPsDAPContext              :: M.Map Int (D.FunctionBreakpoint, Int)
-  , runStmtDeclExceptionDAPContext :: Maybe SourceError
+  , runStmtDeclExceptionDAPContext :: Maybe GAC.SourceError
   , logLevelDAPContext             :: LogLevel
   , stackTraceResultDAPContext     :: Maybe (G.Resume, [G.History])
   , bindingNamesDAPContext         :: [G.Name]
@@ -62,7 +65,7 @@ data DAPContext = DAPContext {
   , continueExecResultDAPContext   :: Maybe G.ExecResult
   }
 
-  
+
 -- |
 --
 defaultDAPContext :: DAPContext
@@ -81,4 +84,3 @@ defaultDAPContext = DAPContext {
   , continueExecResultDAPContext = Nothing
   }
 
-  

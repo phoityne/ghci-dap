@@ -1,34 +1,35 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE CPP #-}
 
 module GHCi.DAP.Utility where
 
 import qualified GHC as G
-import qualified Module as G
 import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 import qualified GHCi.UI as Gi
-import Outputable
-import Exception
 import qualified Data.Char as CH
 import Data.Maybe
 import Control.Monad.IO.Class
 import Control.Concurrent
 import Control.Monad
-import FastString
-import HscTypes
-import InteractiveEvalTypes
-import RtClosureInspect
-import PprTyThing
-import DynFlags
-import DataCon
-import Debugger
 import qualified Data.Map as M
 import System.Directory
+
+import qualified GHCi.GhcApiCompat as GAC
 
 import qualified Haskell.DAP as D
 
 import qualified GHCi.DAP
 import GHCi.DAP.Constant
 import GHCi.DAP.Type
+
+-- |
+--
+gcatch :: Gi.GHCi a -> (GAC.SomeException -> Gi.GHCi a) -> Gi.GHCi a
+#if __GLASGOW_HASKELL__ >= 900
+gcatch = GAC.catch
+#else
+gcatch = GAC.gcatch
+#endif
 
 -- |
 --
@@ -89,7 +90,7 @@ nzPath = drive2lower . win2unixSlash
 
 -- |
 --
-takeModPath :: ModSummary -> (String, FilePath)
+takeModPath :: GAC.ModSummary -> (String, FilePath)
 takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
 
 
@@ -166,20 +167,20 @@ decodeDAP argsStr = liftEither (readDAP argsStr)
 -- |
 --
 liftEither :: Show a => Either a b -> Gi.GHCi b
-liftEither (Left  e) = liftIO $ Exception.throwIO $ userError $ show e
+liftEither (Left  e) = liftIO $ GAC.throwIO $ userError $ show e
 liftEither (Right x) = return x
 
 -- |
 --
-errHdl :: SomeException -> Gi.GHCi ()
+errHdl :: GAC.SomeException -> Gi.GHCi ()
 errHdl e = do
-  let msg = displayException e
+  let msg = GAC.displayException e
       res = Left msg :: Either String ()
   printDAP res
 
 -- |
 --
-unexpectErrHdl :: SomeException -> Gi.GHCi ()
+unexpectErrHdl :: GAC.SomeException -> Gi.GHCi ()
 unexpectErrHdl e = do
   warnL $ "ghci says,\n" ++ show e
 
@@ -187,7 +188,7 @@ unexpectErrHdl e = do
 -- |
 --
 throwError :: String -> Gi.GHCi a
-throwError = liftIO . throwIO . userError
+throwError = liftIO . GAC.throwIO . userError
 
 
 -- |
@@ -267,13 +268,17 @@ addBreakpoint argStr = do
       , D.messageBreakpoint  = "set breakpoint seems to be failed."
       }
 
+#if __GLASGOW_HASKELL__ >= 900
+    withSrcSpan no bpLoc (G.RealSrcSpan dat _) = return
+#else
     withSrcSpan no bpLoc (G.RealSrcSpan dat) = return
+#endif
       D.defaultBreakpoint {
         D.idBreakpoint        = Just no
       , D.verifiedBreakpoint  = True
       , D.sourceBreakpoint    = D.defaultSource {
           D.nameSource             = (Just . G.moduleNameString . G.moduleName . Gi.breakModule) bpLoc
-        , D.pathSource             = (unpackFS . G.srcSpanFile) dat
+        , D.pathSource             = (GAC.unpackFS . G.srcSpanFile) dat
         , D.sourceReferenceSource  = Nothing
         , D.originSource           = Nothing
         }
@@ -307,14 +312,14 @@ execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Right _ }) = do
            D.reasonStoppedEventBody = "complete"
          }
 
-execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Left (SomeException e)}) = do
+execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Left (GAC.SomeException e)}) = do
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = "complete"
          , D.descriptionStoppedEventBody = show e
          , D.textStoppedEventBody = show e
          }
 
-execResult2StoppedEventBody reason (G.ExecBreak{G.breakInfo = Just (BreakInfo _ _)}) = do
+execResult2StoppedEventBody reason (G.ExecBreak{G.breakInfo = Just (GAC.BreakInfo _ _)}) = do
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = reason
          }
@@ -337,17 +342,17 @@ execResult2StoppedEventBody _ (G.ExecBreak{G.breakInfo = Nothing}) = do
 
 -- |
 --
-getNextIdx :: Term -> String -> Gi.GHCi Int
-getNextIdx t@(Term ty _ _ subTerms) str = getDynFlags >>= withDynFlags
+getNextIdx :: GAC.Term -> String -> Gi.GHCi Int
+getNextIdx t@(GAC.Term ty _ _ subTerms) str = GAC.getDynFlags >>= withDynFlags
   where
     withDynFlags dflags
       | 0 == length subTerms = return 0
       | 1 == length subTerms && isPrimCont (head subTerms)  = return 0
-      | "[Char]" == showSDoc dflags (pprTypeForUser ty) = return 0
-      | "String" == showSDoc dflags (pprTypeForUser ty) = return 0
+      | "[Char]" == GAC.showSDoc dflags (GAC.pprTypeForUser ty) = return 0
+      | "String" == GAC.showSDoc dflags (GAC.pprTypeForUser ty) = return 0
       | otherwise = addTerm2VariableReferenceMap t str
 
-    isPrimCont Prim{} = True
+    isPrimCont GAC.Prim{} = True
     isPrimCont _ = False
 getNextIdx t str = addTerm2VariableReferenceMap t str
 
@@ -361,7 +366,7 @@ runStmtVar stmt = do
   Gi.runStmt stmt G.RunToCompletion >>= \case
     Nothing -> getRunStmtSourceError >>= throwError
     Just (G.ExecBreak _ Nothing) -> throwError $ "unexpected break occured while evaluating stmt:" ++ stmt
-    Just (G.ExecBreak _ (Just (BreakInfo (G.Module _ modName) idx)))   -> do
+    Just (G.ExecBreak _ (Just (GAC.BreakInfo (GAC.Module _ modName) idx)))   -> do
       let modStr = G.moduleNameString modName
       let msg    = "unexpected break occured. breakNo:" ++ show idx
                    ++ " in " ++ modStr ++ " while evaluating stmt:" ++ stmt
@@ -393,20 +398,20 @@ name2Var key n = G.lookupName n >>= \case
 --  TyThings https://hackage.haskell.org/package/ghc-8.2.1/docs/HscTypes.html#t:TyThing
 --
 tyThing2Var :: Bool -> G.TyThing -> Gi.GHCi D.Variable
-tyThing2Var _ t@(AConLike c) = defTy2Var t c
-tyThing2Var _ t@(ATyCon c)   = defTy2Var t c
-tyThing2Var _ t@(ACoAxiom c) = defTy2Var t c
-tyThing2Var isInspect (AnId i) = inspectGID isInspect i
+tyThing2Var _ t@(GAC.AConLike c) = defTy2Var t c
+tyThing2Var _ t@(GAC.ATyCon c)   = defTy2Var t c
+tyThing2Var _ t@(GAC.ACoAxiom c) = defTy2Var t c
+tyThing2Var isInspect (GAC.AnId i) = inspectGID isInspect i
 
 
 -- |
 --
-defTy2Var :: (Outputable a, Outputable b)
+defTy2Var :: (GAC.Outputable a, GAC.Outputable b)
           => a -> b -> Gi.GHCi D.Variable
 defTy2Var n t = do
-  dflags <- getDynFlags
-  let name = showSDoc dflags (ppr n)
-      typ  = showSDoc dflags (ppr t)
+  dflags <- GAC.getDynFlags
+  let name = GAC.showSDoc dflags (GAC.ppr n)
+      typ  = GAC.showSDoc dflags (GAC.ppr t)
   return D.defaultVariable {
     D.nameVariable  = name
   , D.typeVariable  = typ
@@ -420,8 +425,8 @@ defTy2Var n t = do
 inspectGID :: Bool -> G.Id -> Gi.GHCi D.Variable
 inspectGID False i = gid2Var i
 inspectGID True  i = do
-  dflags <- getDynFlags
-  case showSDoc dflags (ppr i) of
+  dflags <- GAC.getDynFlags
+  case GAC.showSDoc dflags (GAC.ppr i) of
     "_result" -> gid2Var i
     _ -> G.obtainTermFromId _BINDING_INSPECT_DEPTH True i >>= term2VarById i
 
@@ -429,10 +434,10 @@ inspectGID True  i = do
 --
 gid2Var :: G.Id -> Gi.GHCi D.Variable
 gid2Var i = do
-  dflags <- getDynFlags
-  idSDoc <- pprTypeAndContents i
+  dflags <- GAC.getDynFlags
+  idSDoc <- GAC.pprTypeAndContents i
 
-  let (nameStr, typeStr, valStr) = getNameTypeValue (showSDoc dflags idSDoc)
+  let (nameStr, typeStr, valStr) = getNameTypeValue (GAC.showSDoc dflags idSDoc)
 
   return D.defaultVariable {
     D.nameVariable  = nameStr
@@ -454,10 +459,10 @@ getNameTypeValue str = (strip nameStr, strip typeStr, strip valueStr)
 
 -- |
 --
-term2VarById :: G.Id -> Term -> Gi.GHCi D.Variable
-term2VarById i t@(Term _ _ _ _) = do
-  dflags <- getDynFlags
-  let nameStr = showSDoc dflags (ppr i)
+term2VarById :: G.Id -> GAC.Term -> Gi.GHCi D.Variable
+term2VarById i t@(GAC.Term _ _ _ _) = do
+  dflags <- GAC.getDynFlags
+  let nameStr = GAC.showSDoc dflags (GAC.ppr i)
       evalStr = ""
   term2Var (nameStr, t) evalStr
 term2VarById i _ = gid2Var i
@@ -466,13 +471,13 @@ term2VarById i _ = gid2Var i
 -- |
 --  Term https://hackage.haskell.org/package/ghc-8.2.1/docs/RtClosureInspect.html
 --
-term2Var :: (String, Term) -> String -> Gi.GHCi D.Variable
-term2Var (label, t@(Term ty _ _ _)) evalStr = do
-  dflags <- getDynFlags
-  termSDoc <- showTerm t
+term2Var :: (String, GAC.Term) -> String -> Gi.GHCi D.Variable
+term2Var (label, t@(GAC.Term ty _ _ _)) evalStr = do
+  dflags <- GAC.getDynFlags
+  termSDoc <- GAC.showTerm t
   let nameStr = label
-      typeStr = showSDoc dflags (pprTypeForUser ty)
-      valStr  = showSDoc dflags termSDoc
+      typeStr = GAC.showSDoc dflags (GAC.pprTypeForUser ty)
+      valStr  = GAC.showSDoc dflags termSDoc
       evlStr  = if null evalStr then nameStr else evalStr
 
   nextIdx <- getNextIdx t nameStr
@@ -488,11 +493,11 @@ term2Var (label, t@(Term ty _ _ _)) evalStr = do
   }
 
 term2Var (label, t) _ = do
-  dflags <- getDynFlags
-  termSDoc <- showTerm t
+  dflags <- GAC.getDynFlags
+  termSDoc <- GAC.showTerm t
   let nameStr = label
-      typeStr = showSDoc dflags termSDoc
-      valStr  = showSDoc dflags termSDoc
+      typeStr = GAC.showSDoc dflags termSDoc
+      valStr  = GAC.showSDoc dflags termSDoc
 
   return D.defaultVariable {
     D.nameVariable  = nameStr
@@ -505,18 +510,18 @@ term2Var (label, t) _ = do
 
 -- |
 --
-getDataConstructor :: Term -> String -> Gi.GHCi String
-getDataConstructor (Term _ (Left dc) _ _)  _ = return dc
-getDataConstructor (Term _ (Right dc) _ _) _ = do
-  dflags <- getDynFlags
-  let conStr  = if isTupleDataCon dc then "Tuple" else showSDoc dflags $ ppr $ dataConName dc
+getDataConstructor :: GAC.Term -> String -> Gi.GHCi String
+getDataConstructor (GAC.Term _ (Left dc) _ _)  _ = return dc
+getDataConstructor (GAC.Term _ (Right dc) _ _) _ = do
+  dflags <- GAC.getDynFlags
+  let conStr  = if GAC.isTupleDataCon dc then "Tuple" else GAC.showSDoc dflags $ GAC.ppr $ GAC.dataConName dc
       conStr' = if ":" == conStr then "List" else conStr
-      typeStr = showSDoc dflags (pprTypeForUser (dataConRepType dc))
+      typeStr = GAC.showSDoc dflags (GAC.pprTypeForUser (GAC.dataConRepType dc))
   return $ conStr' ++ " :: " ++ typeStr
 getDataConstructor t defVal = do
-  dflags <- getDynFlags
-  termSDoc <- showTerm t
-  let tstr = showSDoc dflags termSDoc
+  dflags <- GAC.getDynFlags
+  termSDoc <- GAC.showTerm t
+  let tstr = GAC.showSDoc dflags termSDoc
   warnL $ "can not get constructer type. " ++ tstr
   return defVal
 
@@ -569,7 +574,7 @@ clearRunStmtDeclException = do
 
 -- |
 --
-getRunStmtDeclException :: Gi.GHCi (Maybe SourceError)
+getRunStmtDeclException :: Gi.GHCi (Maybe GAC.SourceError)
 getRunStmtDeclException = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ readMVar ctxMVar
@@ -588,7 +593,7 @@ getRunStmtSourceError = do
 
 -- |
 --
-addTerm2VariableReferenceMap :: Term -> String -> Gi.GHCi Int
+addTerm2VariableReferenceMap :: GAC.Term -> String -> Gi.GHCi Int
 addTerm2VariableReferenceMap t str = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ takeMVar ctxMVar
@@ -598,3 +603,4 @@ addTerm2VariableReferenceMap t str = do
   liftIO $ putMVar ctxMVar $ ctx {variableReferenceMapDAPContext = M.insert nextId (t, str) curMap}
 
   return nextId
+

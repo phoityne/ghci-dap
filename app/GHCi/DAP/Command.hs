@@ -1,16 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE CPP #-}
 
 module GHCi.DAP.Command where
 
-import GhcMonad
-import HscTypes
-import RdrName
-import Outputable
-import Exception
-import FastString
-import DataCon
-import DynFlags
-import RtClosureInspect
+import qualified GHCi.GhcApiCompat as GAC
+import Control.Monad.IO.Class
+
 import qualified GHC as G
 import qualified GHCi.UI as Gi
 import qualified GHCi.UI.Monad as Gi hiding (runStmt)
@@ -134,7 +129,7 @@ contextModulesCmd _ = flip gcatch errHdl $ do
 contextModulesCmd_ :: Gi.GHCi (Either String ())
 contextModulesCmd_ = do
   modSums <- Gi.getLoadedModules
-  let modNames = map ms_mod_name modSums
+  let modNames = map GAC.ms_mod_name modSums
       modNameStrs = map G.moduleNameString modNames
 
   Gi.setContext modNames []
@@ -217,7 +212,7 @@ setBpCmd_ args =
 
     -- |
     --
-    takeModPath :: ModSummary -> (ModuleName, FilePath)
+    takeModPath :: GAC.ModSummary -> (ModuleName, FilePath)
     takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
 
 
@@ -511,10 +506,14 @@ dapStackTraceCmd_ _ = do
     -- |
     --
     genStackFrame :: G.SrcSpan -> String -> D.StackFrame
+#if __GLASGOW_HASKELL__ >= 900
+    genStackFrame (G.RealSrcSpan dat _) name = D.defaultStackFrame {
+#else
     genStackFrame (G.RealSrcSpan dat) name = D.defaultStackFrame {
+#endif
         D.idStackFrame        = 0
       , D.nameStackFrame      = name
-      , D.sourceStackFrame    = D.defaultSource {D.pathSource = (unpackFS . G.srcSpanFile) dat}
+      , D.sourceStackFrame    = D.defaultSource {D.pathSource = (GAC.unpackFS . G.srcSpanFile) dat}
       , D.lineStackFrame      = G.srcSpanStartLine dat
       , D.columnStackFrame    = G.srcSpanStartCol dat
       , D.endLineStackFrame   = G.srcSpanEndLine dat
@@ -594,7 +593,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
-    withMoveIdx :: Int -> Gi.GHCi [TyThing]
+    withMoveIdx :: Int -> Gi.GHCi [GAC.TyThing]
     withMoveIdx moveIdx
       | 0 == moveIdx = G.getBindings
       | 0 < moveIdx = back moveIdx
@@ -602,17 +601,17 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
-    getGlobalBindings :: Gi.GHCi [TyThing]
-    getGlobalBindings = withSession $ \hsc_env -> do
-      let ic = hsc_IC hsc_env
-          gb = ic_rn_gbl_env ic
-          es = globalRdrEnvElts gb
-          ns = map gre_name es
+    getGlobalBindings :: Gi.GHCi [GAC.TyThing]
+    getGlobalBindings = GAC.withSession $ \hsc_env -> do
+      let ic = GAC.hsc_IC hsc_env
+          gb = GAC.ic_rn_gbl_env ic
+          es = GAC.globalRdrEnvElts gb
+          ns = map GAC.gre_name es
       foldM withName [] $ reverse ns
 
     -- |
     --
-    back :: Int -> Gi.GHCi [TyThing]
+    back :: Int -> Gi.GHCi [GAC.TyThing]
     back num = do
       clearBindingNames
       Gi.backCmd $ show num
@@ -621,7 +620,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
-    forward :: Int -> Gi.GHCi [TyThing]
+    forward :: Int -> Gi.GHCi [GAC.TyThing]
     forward num = do
       clearBindingNames
       Gi.forwardCmd $ show num
@@ -630,12 +629,12 @@ dapScopesCmd_ args = moveScope >> makeResponse
 
     -- |
     --
-    withName :: [TyThing] -> G.Name -> Gi.GHCi [TyThing]
+    withName :: [GAC.TyThing] -> G.Name -> Gi.GHCi [GAC.TyThing]
     withName acc n = G.lookupName n >>= \case
       Just ty -> return (ty : acc)
       Nothing ->  do
-        dflags <- getDynFlags
-        errorL $ "variable not found. " ++ showSDoc dflags (ppr n)
+        dflags <- GAC.getDynFlags
+        errorL $ "variable not found. " ++ GAC.showSDoc dflags (GAC.ppr n)
         return acc
 
 
@@ -715,20 +714,20 @@ getBindingVariablesNode idx = do
   where
     -- |
     --
-    term2Vars :: Term -> String -> Gi.GHCi [D.Variable]
-    term2Vars (Term _ (Right dc) _ subTerms) str = do
-      let labels = if 0 == length (dataConFieldLabels dc)
+    term2Vars :: GAC.Term -> String -> Gi.GHCi [D.Variable]
+    term2Vars (GAC.Term _ (Right dc) _ subTerms) str = do
+      let labels = if 0 == length (GAC.dataConFieldLabels dc)
                      then map (\i->"_" ++ show i) [1..(length subTerms)]
-                     else map (unpackFS . flLabel) (dataConFieldLabels dc)
+                     else map (GAC.unpackFS . GAC.flLabel) (GAC.dataConFieldLabels dc)
       mapM (flip term2Var str) $ zip labels subTerms
 
-    term2Vars (Term _ (Left _) _ subTerms) str = do
+    term2Vars (GAC.Term _ (Left _) _ subTerms) str = do
       let labels = map (\i->"_" ++ show i) [1..(length subTerms)]
       mapM (flip term2Var str) $ zip labels subTerms
 
     term2Vars t str = do
-      dflags <- getDynFlags
-      let tstr = showSDoc dflags (ppr t)
+      dflags <- GAC.getDynFlags
+      let tstr = GAC.showSDoc dflags (GAC.ppr t)
       warnL $ "unsupported map term type. " ++ tstr ++ ". idx:" ++ show idx ++ ", name:" ++ str
       return []
 
