@@ -12,11 +12,10 @@ bug-reports: https://github.com/phoityne/ghci-dap/issues
 extra-source-files:
 - README.md
 - Changelog.md
-- src-c-8.6/PosixSource.h
 - src-c-8.8/PosixSource.h
 
 when:
-- condition: impl(ghc < 8.6.0)
+- condition: impl(ghc < 8.8.0)
   dependencies: unsupported-ghc-version > 1 && < 1
 
 dependencies:
@@ -62,12 +61,6 @@ executables:
     - ghci-dap
 
     when:
-    - condition: (impl(ghc >= 8.6.0)) && (impl(ghc < 8.7.0))
-      source-dirs: app-ghc-8.6
-      c-sources: src-c-8.6/hschooks.c
-      include-dirs:
-      - src-c-8.6/
-
     - condition: (impl(ghc >= 8.8.1)) && (impl(ghc < 8.9.0))
       source-dirs: app-ghc-8.8
       c-sources: src-c-8.8/hschooks.c
