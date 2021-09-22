@@ -1,3 +1,7 @@
+20220101 ghci-dap-0.0.17.0
+  * [INFO] support ghc-9.2.1.
+
+
 20210815 ghci-dap-0.0.16.0
   * [INFO] support ghc-9.0.1.
 

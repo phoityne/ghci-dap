@@ -131,6 +131,18 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-9.0
+  if (impl(ghc >= 9.2.1)) && (impl(ghc < 9.3.0))
+    other-modules:
+        GHCi.GhcApiCompat
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCi.Util
+        GHCMain
+    hs-source-dirs:
+        app-ghc-9.2
   if os(windows)
     build-depends:
         Win32
