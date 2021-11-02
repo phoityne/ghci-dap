@@ -1,6 +1,6 @@
 module GHCi.GhcApiCompat (
     module GHC.Runtime.Heap.Inspect
-  , module GHC.Driver.Types
+  , module GHC.Unit
   , module GHC.Driver.Monad
   , module GHC.Unit.Module
   , module GHC.Utils.Outputable
@@ -16,7 +16,7 @@ module GHCi.GhcApiCompat (
 ) where
 
 import GHC.Runtime.Heap.Inspect
-import GHC.Driver.Types
+import GHC.Unit
 import GHC.Driver.Monad
 import GHC.Unit.Module
 import GHC.Utils.Outputable
