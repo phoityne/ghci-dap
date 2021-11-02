@@ -9,7 +9,7 @@ module GHCi.GhcApiCompat (
   , module GHC.Data.FastString
   , module GHC.Runtime.Eval.Types
   , module GHC.Core.DataCon
-  , module GHC.Core.Ppr.TyThing
+  , module GHC.Types.TyThing.Ppr
   , module GHC.Driver.Session
   , module GHC.Types.Name.Reader
   , CMC.catch
@@ -25,7 +25,7 @@ import GHC.Runtime.Debugger
 import GHC.Data.FastString
 import GHC.Runtime.Eval.Types
 import GHC.Core.DataCon
-import GHC.Core.Ppr.TyThing
+import GHC.Types.TyThing.Ppr
 import GHC.Driver.Session
 import GHC.Types.Name.Reader
 import qualified Control.Monad.Catch as CMC
