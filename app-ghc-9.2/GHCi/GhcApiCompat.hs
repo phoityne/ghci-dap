@@ -12,6 +12,7 @@ module GHCi.GhcApiCompat (
   , module GHC.Types.TyThing.Ppr
   , module GHC.Driver.Session
   , module GHC.Types.Name.Reader
+  , module GHC.Types.SourceError
   , CMC.catch
 ) where
 
@@ -28,4 +29,5 @@ import GHC.Core.DataCon
 import GHC.Types.TyThing.Ppr
 import GHC.Driver.Session
 import GHC.Types.Name.Reader
+import GHC.Types.SourceError
 import qualified Control.Monad.Catch as CMC
