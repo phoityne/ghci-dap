@@ -85,6 +85,7 @@ import qualified GHC.LanguageExtensions as LangExt
 -- DAP add.
 import qualified GHCi.DAP.Type as DAP
 import Control.Concurrent
+import GHC.Types.SourceError
 
 -----------------------------------------------------------------------------
 -- GHCi monad
