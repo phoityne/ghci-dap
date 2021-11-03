@@ -16,6 +16,7 @@ module GHCi.GhcApiCompat (
   , module GHC.Driver.Ppr
   , module GHC.Types.TyThing
   , module GHC.Unit.Module.ModSummary
+  , module GHC.Driver.Env.Types
   , CMC.catch
 ) where
 
@@ -36,4 +37,5 @@ import GHC.Types.SourceError
 import GHC.Driver.Ppr
 import GHC.Types.TyThing
 import GHC.Unit.Module.ModSummary
+import GHC.Driver.Env.Types
 import qualified Control.Monad.Catch as CMC
