@@ -259,7 +259,7 @@ main' setting postLoadMode dflags0 args flagWarnings = do                       
        StopBefore p           -> liftIO (oneShot hsc_env p srcs)
        DoInteractive          -> ghciUI setting srcs Nothing                       -- DAP Modified
        DoEval exprs           -> ghciUI setting srcs $ Just $ reverse exprs        -- DAP Modified
-       DoRun                  -> doRun srcs args
+       DoRun                  -> doRun setting srcs args                           -- DAP Modified
        DoAbiHash              -> abiHash (map fst srcs)
        ShowPackages           -> liftIO $ showUnits hsc_env
        DoFrontend f           -> doFrontend f srcs
@@ -267,11 +267,11 @@ main' setting postLoadMode dflags0 args flagWarnings = do                       
 
   liftIO $ dumpFinalStats logger dflags6
 
-doRun :: [(FilePath, Maybe Phase)] -> [Located String] -> Ghc ()
-doRun srcs args = do
+doRun :: GhciSettings -> [(FilePath, Maybe Phase)] -> [Located String] -> Ghc ()    -- DAP Modified
+doRun setting srcs args = do
     dflags <- getDynFlags
     let mainFun = fromMaybe "main" (mainFunIs dflags)
-    ghciUI srcs (Just ["System.Environment.withArgs " ++ show args' ++ " (Control.Monad.void " ++ mainFun ++ ")"])
+    ghciUI setting srcs (Just ["System.Environment.withArgs " ++ show args' ++ " (Control.Monad.void " ++ mainFun ++ ")"])
   where
     args' = drop 1 $ dropWhile (/= "--") $ map unLoc args
 
