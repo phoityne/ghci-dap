@@ -5,13 +5,14 @@ description: Please see README.md
 category: Development
 author: phoityne_hs
 maintainer: phoityne.hs@gmail.com
-copyright: 2017-2021 phoityne_hs
+copyright: 2017-2022 phoityne_hs
 license: BSD3
 homepage: https://github.com/phoityne/ghci-dap
 bug-reports: https://github.com/phoityne/ghci-dap/issues
 extra-source-files:
 - README.md
 - Changelog.md
+- src-c-9.2/PosixSource.h
 
 when:
 - condition: impl(ghc < 8.10.0)
@@ -68,6 +69,9 @@ executables:
 
     - condition: (impl(ghc >= 9.2.1)) && (impl(ghc < 9.3.0))
       source-dirs: app-ghc-9.2
+      c-sources: src-c-9.2/hschooks.c
+      include-dirs:
+      - src-c-9.2/
 
     - condition: os(windows)
       then:
