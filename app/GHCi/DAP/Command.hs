@@ -614,7 +614,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
       where
         contName :: GAC.GreName -> [G.Name] -> [G.Name]
         contName (GAC.NormalGreName n) xs = n:xs
-        contName _ xs = xs
+        contName (GAC.FieldGreName _)  xs = xs
 #else
     -- |
     --
