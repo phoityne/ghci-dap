@@ -1,5 +1,5 @@
 name: ghci-dap
-version: '0.0.17.0'
+version: '0.0.18.0'
 synopsis: ghci-dap is a GHCi having DAP interface.
 description: Please see README.md
 category: Development
@@ -15,7 +15,7 @@ extra-source-files:
 - src-c-9.2/PosixSource.h
 
 when:
-- condition: impl(ghc < 8.10.0)
+- condition: impl(ghc < 9.0.0)
   dependencies: unsupported-ghc-version > 1 && < 1
 
 dependencies:
@@ -61,9 +61,6 @@ executables:
     - ghci-dap
 
     when:
-    - condition: (impl(ghc >= 8.10.1)) && (impl(ghc < 8.11.0))
-      source-dirs: app-ghc-8.10
-
     - condition: (impl(ghc >= 9.0.1)) && (impl(ghc < 9.1.0))
       source-dirs: app-ghc-9.0
 
@@ -72,6 +69,9 @@ executables:
       c-sources: src-c-9.2/hschooks.c
       include-dirs:
       - src-c-9.2/
+
+    - condition: (impl(ghc >= 9.4.1)) && (impl(ghc < 9.5.0))
+      source-dirs: app-ghc-9.4
 
     - condition: os(windows)
       then:
