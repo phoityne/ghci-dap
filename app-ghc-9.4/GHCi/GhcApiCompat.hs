@@ -18,7 +18,9 @@ module GHCi.GhcApiCompat (
   , module GHC.Unit.Module.ModSummary
   , module GHC.Driver.Env.Types
   , module GHC.Runtime.Context
+  , module GHC.Types.BreakInfo
   , CMC.catch
+  , pprTypeForUser
 ) where
 
 import GHC.Runtime.Heap.Inspect
@@ -40,4 +42,12 @@ import GHC.Types.TyThing
 import GHC.Unit.Module.ModSummary
 import GHC.Driver.Env.Types
 import GHC.Runtime.Context
+import GHC.Types.BreakInfo
 import qualified Control.Monad.Catch as CMC
+import GHC.Core.TyCo.Ppr as PPR
+
+-- |
+--
+pprTypeForUser :: Type -> SDoc
+pprTypeForUser = PPR.pprSigmaType :: Type -> SDoc
+
