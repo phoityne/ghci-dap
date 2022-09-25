@@ -18,7 +18,10 @@ module GHCi.GhcApiCompat (
   , module GHC.Unit.Module.ModSummary
   , module GHC.Driver.Env.Types
   , module GHC.Runtime.Context
+  , module GHC.Types.BreakInfo
   , CMC.catch
+  , pprTypeForUser
+  , ic_rn_gbl_env
 ) where
 
 import GHC.Runtime.Heap.Inspect
@@ -40,4 +43,19 @@ import GHC.Types.TyThing
 import GHC.Unit.Module.ModSummary
 import GHC.Driver.Env.Types
 import GHC.Runtime.Context
+import GHC.Types.BreakInfo
+import GHC.Core.TyCo.Ppr
+import GHC.Core.Type
 import qualified Control.Monad.Catch as CMC
+
+-- |
+--
+--
+pprTypeForUser :: Type -> SDoc
+pprTypeForUser = pprSigmaType
+
+-- |
+--
+--
+ic_rn_gbl_env :: InteractiveContext -> GlobalRdrEnv
+ic_rn_gbl_env = igre_env . ic_gre_cache

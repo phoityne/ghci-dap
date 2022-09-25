@@ -10,7 +10,6 @@ import qualified GHC as G
 import qualified GHCi.UI as Gi
 import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 
-import Control.Monad.Trans.Class
 import Control.Concurrent
 import Control.Monad
 import System.Console.Haskeline
@@ -27,23 +26,21 @@ import qualified Haskell.DAP as D
 --
 dapCommands :: [Gi.Command]
 dapCommands = map mkCmd [
-    ("dap-launch",                   dapCmdRunner launchCmd,         noCompletion)
-  , ("dap-context-modules",          dapCmdRunner contextModulesCmd, noCompletion)
-  , ("dap-set-breakpoints",          dapCmdRunner setBpCmd,          noCompletion)
-  , ("dap-set-function-breakpoints", dapCmdRunner setFuncBpsCmd,     noCompletion)
-  , ("dap-set-function-breakpoint",  dapCmdRunner setFuncBpCmd,      noCompletion)
-  , ("dap-delete-breakpoint",        dapCmdRunner delBpCmd,          noCompletion)
-  , ("dap-stacktrace",               dapCmdRunner dapStackTraceCmd,  noCompletion)
-  , ("dap-scopes",                   dapCmdRunner dapScopesCmd,      noCompletion)
-  , ("dap-variables",                dapCmdRunner dapVariablesCmd,   noCompletion)
-  , ("dap-evaluate",                 dapCmdRunner dapEvalCmd,        noCompletion)
-  , ("dap-continue",                 dapCmdRunner dapContinueCmd,    noCompletion)
-  , ("dap-next",                     dapCmdRunner nextCmd,           noCompletion)
-  , ("dap-step-in",                  dapCmdRunner stepInCmd,         noCompletion)
+    ("dap-launch",                   Gi.keepGoing launchCmd,         noCompletion)
+  , ("dap-context-modules",          Gi.keepGoing contextModulesCmd, noCompletion)
+  , ("dap-set-breakpoints",          Gi.keepGoing setBpCmd,          noCompletion)
+  , ("dap-set-function-breakpoints", Gi.keepGoing setFuncBpsCmd,     noCompletion)
+  , ("dap-set-function-breakpoint",  Gi.keepGoing setFuncBpCmd,      noCompletion)
+  , ("dap-delete-breakpoint",        Gi.keepGoing delBpCmd,          noCompletion)
+  , ("dap-stacktrace",               Gi.keepGoing dapStackTraceCmd,  noCompletion)
+  , ("dap-scopes",                   Gi.keepGoing dapScopesCmd,      noCompletion)
+  , ("dap-variables",                Gi.keepGoing dapVariablesCmd,   noCompletion)
+  , ("dap-evaluate",                 Gi.keepGoing dapEvalCmd,        noCompletion)
+  , ("dap-continue",                 Gi.keepGoing dapContinueCmd,    noCompletion)
+  , ("dap-next",                     Gi.keepGoing nextCmd,           noCompletion)
+  , ("dap-step-in",                  Gi.keepGoing stepInCmd,         noCompletion)
   ]
   where
-    mkCmd :: (String, String -> InputT Gi.GHCi Bool, CompletionFunc Gi.GHCi)
-          -> Gi.Command
     mkCmd (n,a,c) = Gi.Command {
                     Gi.cmdName = n
                   , Gi.cmdAction = a
@@ -51,16 +48,6 @@ dapCommands = map mkCmd [
                   , Gi.cmdCompletionFunc = c
                   }
 
-    -- |
-    --
-    dapCmdRunner :: (String -> Gi.GHCi ())
-                -> String
-                -> InputT Gi.GHCi Bool
-    dapCmdRunner cmd str = do
-
-      lift $ cmd str
-
-      return False
 
 
 ------------------------------------------------------------------------------------------------

@@ -41,7 +41,8 @@ module GHCi.UI (
         runStmt,
         toBreakIdAndLocation,
         forceCmd,
-        setContext
+        setContext,
+        keepGoing,
     ) where
 
 -- GHCi
