@@ -1,6 +1,8 @@
-20220831 ghci-dap-0.0.18.0
-  * [INFO] support ghc-9.4.1.
-]
+
+20220930 ghci-dap-0.0.18.0
+  * [INFO] support ghc-9.4.2.
+  * [INFO] support ghc-9.2.4.
+
 
 20220101 ghci-dap-0.0.17.0
   * [INFO] support ghc-9.2.1.
