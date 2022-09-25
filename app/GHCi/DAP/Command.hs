@@ -587,7 +587,22 @@ dapScopesCmd_ args = moveScope >> makeResponse
       | otherwise = forward (negate moveIdx)
 
 
-#if __GLASGOW_HASKELL__ >= 902
+#if __GLASGOW_HASKELL__ >= 904
+    -- |
+    --
+    getGlobalBindings :: Gi.GHCi [GAC.TyThing]
+    getGlobalBindings = GAC.withSession $ \hsc_env -> do
+      let ic = GAC.hsc_IC hsc_env
+          gb = GAC.icReaderEnv ic
+          es = GAC.globalRdrEnvElts gb
+          ns = foldr contName [] $ map GAC.gre_name es
+      foldM withName [] $ reverse ns
+
+      where
+        contName :: GAC.GreName -> [G.Name] -> [G.Name]
+        contName (GAC.NormalGreName n) xs = n:xs
+        contName (GAC.FieldGreName _)  xs = xs
+#elif __GLASGOW_HASKELL__ >= 902
     -- |
     --
     getGlobalBindings :: Gi.GHCi [GAC.TyThing]

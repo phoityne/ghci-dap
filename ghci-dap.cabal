@@ -89,6 +89,9 @@ executable ghci-dap
     , text
     , time
     , transformers
+  if impl(ghc < 9.0.0)
+    build-depends:
+        unsupported-ghc-version >1 && <1
   if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.1.0))
     other-modules:
         GHCi.GhcApiCompat
