@@ -1,3 +1,6 @@
+20221024 ghci-dap-0.0.19.0
+  * [INFO] support ghc-8.10.7.
+
 
 20220930 ghci-dap-0.0.18.0
   * [INFO] support ghc-9.4.2.

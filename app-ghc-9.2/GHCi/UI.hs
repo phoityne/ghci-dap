@@ -42,7 +42,7 @@ module GHCi.UI (
         toBreakIdAndLocation,
         forceCmd,
         setContext,
-        keepGoing,
+        keepGoing
     ) where
 
 #include "HsVersions.h"
