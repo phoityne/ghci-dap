@@ -14,6 +14,7 @@ import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 import Control.Concurrent
 import Control.Monad
 import System.Console.Haskeline
+import System.Directory
 import qualified Data.Map as M
 import qualified Data.List as L
 
@@ -459,11 +460,21 @@ dapStackTraceCmd_ _ = do
                      then hists
                      else resume2stackframe r : hists
       let traceWithId = setFrameIdx 0 traces
+      traceWithId2 <- liftIO $ mapM convertToAbs traceWithId
 
       return $ Right D.defaultStackTraceResponseBody {
-          D.stackFramesStackTraceResponseBody = traceWithId
-        , D.totalFramesStackTraceResponseBody = length traceWithId
+          D.stackFramesStackTraceResponseBody = traceWithId2
+        , D.totalFramesStackTraceResponseBody = length traceWithId2
         }
+
+    -- |
+    --
+    convertToAbs :: D.StackFrame -> IO D.StackFrame
+    convertToAbs sf@D.StackFrame{D.sourceStackFrame=ssf}
+      | D.pathSource ssf == "UnhelpfulSpan" = return sf
+      | otherwise = do
+          ps <- canonicalizePath $ D.pathSource ssf
+          return sf{D.sourceStackFrame=ssf{D.pathSource = ps}}
 
     -- |
     --
