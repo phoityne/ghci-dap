@@ -97,8 +97,6 @@ import GHC.ResponseFile (expandResponse)
 import Data.Bifunctor
 import GHC.Data.Graph.Directed
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Version as Version
-import Paths_ghci_dap (version)
 
 -- DAP add
 import qualified GHC.Paths
@@ -163,8 +161,7 @@ ghcMain setting = do                -- DAP Modified
                             ShowGhcUsage           -> showGhcUsage  dflags
                             ShowGhciUsage          -> showGhciUsage dflags
                             PrintWithDynFlags f    -> putStrLn (f dflags)
-                Right postLoadMode -> do
-                    liftIO . putStrLn $ "[DAP][INFO] start ghci-dap-" ++ Version.showVersion version ++ "."
+                Right postLoadMode ->
                     main' setting postLoadMode units dflags argv3 flagWarnings          -- DAP Modified
 
 main' :: GhciSettings -> PostLoadMode -> [String] -> DynFlags -> [Located String] -> [Warn]   -- DAP Modified

@@ -9,10 +9,16 @@ import Control.Concurrent
 import GHCi.DAP.Command
 import GHCi.DAP.Type
 
+import Paths_ghci_dap (version)
+import Data.Version
+
 -- |
 --  Main
+--
 main :: IO ()
 main = do
+  putStrLn $ "[DAP][INFO] start ghci-dap-" ++ showVersion version ++ "."
+
   mvarCtx <- newMVar defaultDAPContext
 
   let ghciSettings    = G.defaultGhciSettings mvarCtx

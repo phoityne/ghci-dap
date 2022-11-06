@@ -83,8 +83,6 @@ import Data.Char
 import Data.List ( isPrefixOf, partition, intercalate )
 import qualified Data.Set as Set
 import Data.Maybe
-import qualified Data.Version as Version
-import Paths_ghci_dap (version)
 import Prelude
 
 -- DAP add
@@ -151,8 +149,7 @@ ghcMain setting = do                -- DAP Modified
                             ShowGhcUsage           -> showGhcUsage  dflags
                             ShowGhciUsage          -> showGhciUsage dflags
                             PrintWithDynFlags f    -> putStrLn (f dflags)
-                Right postLoadMode -> do
-                    liftIO . putStrLn $ "[DAP][INFO] start ghci-dap-" ++ Version.showVersion version ++ "."
+                Right postLoadMode ->
                     main' setting postLoadMode dflags argv3 flagWarnings          -- DAP Modified
 
 main' :: GhciSettings -> PostLoadMode -> DynFlags -> [Located String] -> [Warn]   -- DAP Modified
