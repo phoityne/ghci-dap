@@ -19,6 +19,7 @@ module GHCi.GhcApiCompat (
   , module GHC.Driver.Env.Types
   , module GHC.Runtime.Context
   , module GHC.Types.BreakInfo
+  , module GHC.Types.FieldLabel
   , CMC.catch
   , pprTypeForUser
   , ic_rn_gbl_env
@@ -46,6 +47,7 @@ import GHC.Runtime.Context
 import GHC.Types.BreakInfo
 import GHC.Core.TyCo.Ppr
 import GHC.Core.Type
+import GHC.Types.FieldLabel
 import qualified Control.Monad.Catch as CMC
 
 -- |

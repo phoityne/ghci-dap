@@ -460,18 +460,18 @@ dapStackTraceCmd_ _ = do
                      then hists
                      else resume2stackframe r : hists
       let traceWithId = setFrameIdx 0 traces
-      traceWithId2 <- liftIO $ mapM convertToAbs traceWithId
+      traceWithId' <- liftIO $ mapM convertToAbs traceWithId
 
       return $ Right D.defaultStackTraceResponseBody {
-          D.stackFramesStackTraceResponseBody = traceWithId2
-        , D.totalFramesStackTraceResponseBody = length traceWithId2
+          D.stackFramesStackTraceResponseBody = traceWithId'
+        , D.totalFramesStackTraceResponseBody = length traceWithId'
         }
 
     -- |
     --
     convertToAbs :: D.StackFrame -> IO D.StackFrame
     convertToAbs sf@D.StackFrame{D.sourceStackFrame=ssf}
-      | D.pathSource ssf == "UnhelpfulSpan" = return sf
+      | D.pathSource ssf == _STACK_FRAME_UNHELPFULL_SPAN = return sf
       | otherwise = do
           ps <- canonicalizePath $ D.pathSource ssf
           return sf{D.sourceStackFrame=ssf{D.pathSource = ps}}
@@ -522,7 +522,7 @@ dapStackTraceCmd_ _ = do
     genStackFrame (G.UnhelpfulSpan _) name = D.defaultStackFrame {
         D.idStackFrame        = 0
       , D.nameStackFrame      = name
-      , D.sourceStackFrame    = D.defaultSource {D.pathSource = "UnhelpfulSpan"}
+      , D.sourceStackFrame    = D.defaultSource {D.pathSource = _STACK_FRAME_UNHELPFULL_SPAN}
       , D.lineStackFrame      = 0
       , D.columnStackFrame    = 0
       , D.endLineStackFrame   = 0
@@ -614,7 +614,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
       where
         contName :: GAC.GreName -> [G.Name] -> [G.Name]
         contName (GAC.NormalGreName n) xs = n:xs
-        contName (GAC.FieldGreName _)  xs = xs
+        contName (GAC.FieldGreName n)  xs = GAC.fieldLabelPrintableName n:xs
 #elif __GLASGOW_HASKELL__ >= 902
     -- |
     --
@@ -629,7 +629,7 @@ dapScopesCmd_ args = moveScope >> makeResponse
       where
         contName :: GAC.GreName -> [G.Name] -> [G.Name]
         contName (GAC.NormalGreName n) xs = n:xs
-        contName (GAC.FieldGreName _)  xs = xs
+        contName (GAC.FieldGreName n)  xs = GAC.fieldLabelPrintableName n:xs
 #else
     -- |
     --
@@ -731,8 +731,8 @@ getBindingVariablesRoot bindings = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ readMVar ctxMVar
   let isInspect = isInspectVariableDAPContext ctx
-  mapM (tyThing2Var isInspect) bindings
-
+  vars <- mapM (tyThing2Var isInspect) bindings
+  return vars
 
 -- |
 --
