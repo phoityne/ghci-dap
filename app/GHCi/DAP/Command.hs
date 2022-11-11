@@ -7,12 +7,14 @@ import qualified GHCi.GhcApiCompat as GAC
 import Control.Monad.IO.Class
 
 import qualified GHC as G
+import qualified GHC.Data.StringBuffer as SB (lexemeToString, len)
 import qualified GHCi.UI as Gi
 import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 
 import Control.Concurrent
 import Control.Monad
 import System.Console.Haskeline
+import System.Directory
 import qualified Data.Map as M
 import qualified Data.List as L
 
@@ -39,6 +41,7 @@ dapCommands = map mkCmd [
   , ("dap-continue",                 Gi.keepGoing dapContinueCmd,    noCompletion)
   , ("dap-next",                     Gi.keepGoing nextCmd,           noCompletion)
   , ("dap-step-in",                  Gi.keepGoing stepInCmd,         noCompletion)
+  , ("dap-source",                   Gi.keepGoing sourceCmd,         noCompletion)
   ]
   where
     mkCmd (n,a,c) = Gi.Command {
@@ -457,11 +460,21 @@ dapStackTraceCmd_ _ = do
                      then hists
                      else resume2stackframe r : hists
       let traceWithId = setFrameIdx 0 traces
+      traceWithId2 <- liftIO $ mapM convertToAbs traceWithId
 
       return $ Right D.defaultStackTraceResponseBody {
-          D.stackFramesStackTraceResponseBody = traceWithId
-        , D.totalFramesStackTraceResponseBody = length traceWithId
+          D.stackFramesStackTraceResponseBody = traceWithId2
+        , D.totalFramesStackTraceResponseBody = length traceWithId2
         }
+
+    -- |
+    --
+    convertToAbs :: D.StackFrame -> IO D.StackFrame
+    convertToAbs sf@D.StackFrame{D.sourceStackFrame=ssf}
+      | D.pathSource ssf == "UnhelpfulSpan" = return sf
+      | otherwise = do
+          ps <- canonicalizePath $ D.pathSource ssf
+          return sf{D.sourceStackFrame=ssf{D.pathSource = ps}}
 
     -- |
     --
@@ -1092,3 +1105,34 @@ stepInCmd_ _ = do
   Right <$> genStoppedEventBody "step"
 
 
+------------------------------------------------------------------------------------------------
+--  DAP Command :dap-source
+------------------------------------------------------------------------------------------------
+-- |
+--
+sourceCmd :: String -> Gi.GHCi ()
+sourceCmd argsStr = flip gcatch errHdl $ do
+  decodeDAP argsStr
+  >>= sourceCmd_
+  >>= printDAP
+
+-- |
+--
+sourceCmd_ :: D.SourceRequestArguments
+          -> Gi.GHCi (Either String D.SourceResponseBody)
+sourceCmd_ args = do
+  modSums <- Gi.getLoadedModules
+  let Just srcInfo =  D.sourceSourceRequestArguments args
+      srcPath = D.pathSource srcInfo
+      modPaths = map takeModPath modSums
+      summary = L.find (\sum -> G.ms_hspp_file sum == srcPath) modSums
+  case summary of
+    Nothing -> throwError $ "<sourceCmd_> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+    Just summary -> do
+      case G.ms_hspp_buf summary of
+        Nothing -> throwError $ "<sourceCmd_> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+        Just strBuf -> do
+          let content = SB.lexemeToString strBuf (SB.len strBuf)
+          return $ Right D.defaultSourceResponseBody {
+              D.contentSourceResponseBody = content
+            }
