@@ -22,6 +22,7 @@ import GHCi.DAP.Type
 import GHCi.DAP.Constant
 import GHCi.DAP.Utility
 import qualified Haskell.DAP as D
+import Data.Maybe (fromJust)
 
 
 -- |
@@ -1122,7 +1123,7 @@ sourceCmd_ :: D.SourceRequestArguments
           -> Gi.GHCi (Either String D.SourceResponseBody)
 sourceCmd_ args = do
   modSums <- Gi.getLoadedModules
-  let Just srcInfo =  D.sourceSourceRequestArguments args
+  let srcInfo = fromJust $ D.sourceSourceRequestArguments args
       srcPath = D.pathSource srcInfo
       modPaths = map takeModPath modSums
       summary = L.find (\sum -> G.ms_hspp_file sum == srcPath) modSums
