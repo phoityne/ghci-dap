@@ -1,5 +1,6 @@
-20221120 ghci-dap-0.0.20.0
-  * [FIX] ISSUE#13 add Source Request and Response
+20221127 ghci-dap-0.0.20.0
+  * [MODIFY] hdx4vsc ISSUE#27 Feature request: support jumping into library
+  * [INFO] support ghc-9.4.3.
 
 
 20221024 ghci-dap-0.0.19.0

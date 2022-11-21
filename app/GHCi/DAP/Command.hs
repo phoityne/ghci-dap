@@ -13,6 +13,7 @@ import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 
 import Control.Concurrent
 import Control.Monad
+import qualified Control.Monad.Catch as E
 import System.Console.Haskeline
 import System.Directory
 import qualified Data.Map as M
@@ -472,9 +473,21 @@ dapStackTraceCmd_ _ = do
     convertToAbs :: D.StackFrame -> IO D.StackFrame
     convertToAbs sf@D.StackFrame{D.sourceStackFrame=ssf}
       | D.pathSource ssf == _STACK_FRAME_UNHELPFULL_SPAN = return sf
-      | otherwise = do
-          ps <- canonicalizePath $ D.pathSource ssf
-          return sf{D.sourceStackFrame=ssf{D.pathSource = ps}}
+      | otherwise = E.catch (pathToAbs sf ssf) (constSF sf)
+
+    -- |
+    --
+    pathToAbs :: D.StackFrame -> D.Source -> IO D.StackFrame
+    pathToAbs sf ssf = do
+      ps <- canonicalizePath $ D.pathSource ssf
+      return sf{D.sourceStackFrame=ssf{D.pathSource = ps}}
+      
+    -- |
+    --
+    constSF :: D.StackFrame -> E.SomeException -> IO D.StackFrame
+    constSF sf e = do
+      putStrLn $ show InfoLogLevel ++ show e
+      return sf
 
     -- |
     --
