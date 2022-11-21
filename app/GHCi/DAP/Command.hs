@@ -1122,17 +1122,19 @@ sourceCmd_ :: D.SourceRequestArguments
           -> Gi.GHCi (Either String D.SourceResponseBody)
 sourceCmd_ args = do
   modSums <- Gi.getLoadedModules
-  let Just srcInfo =  D.sourceSourceRequestArguments args
-      srcPath = D.pathSource srcInfo
-      modPaths = map takeModPath modSums
-      summary = L.find (\sum -> G.ms_hspp_file sum == srcPath) modSums
-  case summary of
-    Nothing -> throwError $ "<sourceCmd_> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
-    Just summary -> do
-      case G.ms_hspp_buf summary of
+  case D.sourceSourceRequestArguments  args of
+    Nothing -> throwError "<sourceCmd_> deprecated data: sourceReference property in SourceRequest is not supported"
+    Just srcInfo -> do
+      let srcPath = D.pathSource srcInfo
+          modPaths = map takeModPath modSums
+          summary = L.find (\sum -> G.ms_hspp_file sum == srcPath) modSums
+      case summary of
         Nothing -> throwError $ "<sourceCmd_> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
-        Just strBuf -> do
-          let content = SB.lexemeToString strBuf (SB.len strBuf)
-          return $ Right D.defaultSourceResponseBody {
-              D.contentSourceResponseBody = content
-            }
+        Just summary -> do
+          case G.ms_hspp_buf summary of
+            Nothing -> throwError $ "<sourceCmd_> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
+            Just strBuf -> do
+              let content = SB.lexemeToString strBuf (SB.len strBuf)
+              return $ Right D.defaultSourceResponseBody {
+                  D.contentSourceResponseBody = content
+                }
