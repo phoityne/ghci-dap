@@ -7,7 +7,6 @@ import qualified GHCi.GhcApiCompat as GAC
 import Control.Monad.IO.Class
 
 import qualified GHC as G
-import qualified GHC.Data.StringBuffer as SB (lexemeToString, len)
 import qualified GHCi.UI as Gi
 import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 
@@ -24,6 +23,10 @@ import GHCi.DAP.Constant
 import GHCi.DAP.Utility
 import qualified Haskell.DAP as D
 
+#if __GLASGOW_HASKELL__ >= 900
+import qualified GHC.Data.StringBuffer as SB (lexemeToString, len)
+#else
+#endif
 
 -- |
 --
@@ -744,6 +747,12 @@ getBindingVariablesRoot bindings = do
   ctxMVar <- Gi.dapContextGHCiState <$> Gi.getGHCiState
   ctx <- liftIO $ readMVar ctxMVar
   let isInspect = isInspectVariableDAPContext ctx
+
+  --
+  --  ref: https://gitlab.haskell.org/ghc/ghc/-/issues/19394
+  --       ignore console messages.
+  --         <interactive>: ^^ Could not load 'ghczmprim_GHCziPrim_seq_closure', dependency unresolved. See top entry above.
+  --
   vars <- mapM (tyThing2Var isInspect) bindings
   return vars
 
@@ -1133,6 +1142,8 @@ sourceCmd argsStr = flip gcatch errHdl $ do
 --
 sourceCmd_ :: D.SourceRequestArguments
           -> Gi.GHCi (Either String D.SourceResponseBody)
+
+#if __GLASGOW_HASKELL__ >= 900
 sourceCmd_ args = do
   modSums <- Gi.getLoadedModules
   case D.sourceSourceRequestArguments  args of
@@ -1151,3 +1162,6 @@ sourceCmd_ args = do
               return $ Right D.defaultSourceResponseBody {
                   D.contentSourceResponseBody = content
                 }
+#else
+sourceCmd_ _ = throwError "<sourceCmd_> supported from ghc9."
+#endif
