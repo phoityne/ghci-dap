@@ -45,7 +45,7 @@ library
     , ghc-prim
     , ghci
     , haskeline
-    , haskell-dap >=0.0.15.0
+    , haskell-dap >=0.0.16.0
     , process
     , text
     , time
@@ -84,7 +84,7 @@ executable ghci-dap
     , ghci
     , ghci-dap
     , haskeline
-    , haskell-dap >=0.0.15.0
+    , haskell-dap >=0.0.16.0
     , process
     , text
     , time
@@ -150,5 +150,5 @@ executable ghci-dap
   else
     build-depends:
         unix
-    -- ghc-options: -dynamic
+    -- ghc-options: -dynamic-too
   default-language: Haskell2010
