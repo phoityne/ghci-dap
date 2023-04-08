@@ -20,6 +20,8 @@ module GHCi.GhcApiCompat (
   , module GHC.Runtime.Context
   , module GHC.Types.FieldLabel 
   , CMC.catch
+  , parseName
+  , fls2fs
 ) where
 
 import GHC.Runtime.Heap.Inspect
@@ -43,3 +45,16 @@ import GHC.Driver.Env.Types
 import GHC.Runtime.Context
 import GHC.Types.FieldLabel
 import qualified Control.Monad.Catch as CMC
+import qualified GHC as G
+
+-- |
+--
+--
+parseName :: GhcMonad m => String -> m [G.Name]
+parseName = G.parseName
+
+-- |
+--
+--
+fls2fs :: FieldLabelString -> FastString
+fls2fs = id

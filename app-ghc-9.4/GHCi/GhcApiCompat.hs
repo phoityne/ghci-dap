@@ -23,6 +23,8 @@ module GHCi.GhcApiCompat (
   , CMC.catch
   , pprTypeForUser
   , ic_rn_gbl_env
+  , parseName
+  , fls2fs
 ) where
 
 import GHC.Runtime.Heap.Inspect
@@ -49,6 +51,7 @@ import GHC.Core.TyCo.Ppr
 import GHC.Core.Type
 import GHC.Types.FieldLabel
 import qualified Control.Monad.Catch as CMC
+import qualified GHC as G
 
 -- |
 --
@@ -61,3 +64,15 @@ pprTypeForUser = pprSigmaType
 --
 ic_rn_gbl_env :: InteractiveContext -> GlobalRdrEnv
 ic_rn_gbl_env = igre_env . ic_gre_cache
+
+-- |
+--
+--
+parseName :: GhcMonad m => String -> m [G.Name]
+parseName = G.parseName
+
+-- |
+--
+--
+fls2fs :: FieldLabelString -> FastString
+fls2fs = id

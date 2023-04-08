@@ -12,6 +12,8 @@ module GHCi.GhcApiCompat (
   , module InteractiveEvalTypes
   , module PprTyThing
   , module Module
+  , parseName
+  , fls2fs
   ) where
 
 import GhcMonad
@@ -27,3 +29,17 @@ import Debugger
 import InteractiveEvalTypes
 import PprTyThing
 import Module
+import qualified GHC as G
+
+-- |
+--
+--
+parseName :: GhcMonad m => String -> m [G.Name]
+parseName = G.parseName
+
+-- |
+--
+--
+fls2fs :: FieldLabelString -> FastString
+fls2fs = id
+
