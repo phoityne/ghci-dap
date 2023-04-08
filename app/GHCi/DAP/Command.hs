@@ -773,7 +773,7 @@ getBindingVariablesNode idx = do
     term2Vars (GAC.Term _ (Right dc) _ subTerms) str = do
       let labels = if 0 == length (GAC.dataConFieldLabels dc)
                      then map (\i->"_" ++ show i) [1..(length subTerms)]
-                     else map (GAC.unpackFS . GAC.flLabel) (GAC.dataConFieldLabels dc)
+                     else map (GAC.unpackFS . GAC.fls2fs . GAC.flLabel) (GAC.dataConFieldLabels dc)
       mapM (flip term2Var str) $ zip labels subTerms
 
     term2Vars (GAC.Term _ (Left _) _ subTerms) str = do
@@ -836,7 +836,7 @@ dapEvalCmd_ args = case D.contextEvaluateRequestArguments args of
     runOther :: D.EvaluateRequestArguments -> Gi.GHCi (Either String D.EvaluateResponseBody)
     runOther args = do
       let nameStr = D.expressionEvaluateRequestArguments args
-      names <- G.parseName nameStr
+      names <- GAC.parseName nameStr
       var   <- names2Var nameStr names
 
       let varStr = if "_" == D.valueVariable var
