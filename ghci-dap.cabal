@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           ghci-dap
-version:        0.0.21.0
+version:        0.0.22.0
 synopsis:       ghci-dap is a GHCi having DAP interface.
 description:    Please see README.md
 category:       Development
@@ -20,7 +20,6 @@ build-type:     Simple
 extra-source-files:
     README.md
     Changelog.md
-    src-c-9.2/PosixSource.h
 
 library
   exposed-modules:
@@ -104,22 +103,6 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-8.10
-  if (impl(ghc >= 9.2.1)) && (impl(ghc < 9.3.0))
-    other-modules:
-        GHCi.GhcApiCompat
-        GHCi.Leak
-        GHCi.UI
-        GHCi.UI.Info
-        GHCi.UI.Monad
-        GHCi.UI.Tags
-        GHCi.Util
-        GHCMain
-    hs-source-dirs:
-        app-ghc-9.2
-    include-dirs:
-        src-c-9.2/
-    c-sources:
-        src-c-9.2/hschooks.c
   if (impl(ghc >= 9.4.1)) && (impl(ghc < 9.5.0))
     other-modules:
         GHCi.GhcApiCompat
@@ -144,6 +127,18 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-9.6
+  if (impl(ghc >= 9.8.1)) && (impl(ghc < 9.9.0))
+    other-modules:
+        GHCi.GhcApiCompat
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCi.Util
+        GHCMain
+    hs-source-dirs:
+        app-ghc-9.8
   if os(windows)
     build-depends:
         Win32
