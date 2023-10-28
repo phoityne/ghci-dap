@@ -1,5 +1,10 @@
+20231224 ghci-dap-0.0.22.0
+  * [INFO] support ghc-9.8.1.
+
+
 20230402 ghci-dap-0.0.21.0
   * [INFO] support ghc-9.6.1.
+
 
 20221127 ghci-dap-0.0.20.0
   * [MODIFY] hdx4vsc ISSUE#27 Feature request: support jumping into library

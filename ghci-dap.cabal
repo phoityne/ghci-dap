@@ -134,7 +134,7 @@ executable ghci-dap
         GHCi.UI
         GHCi.UI.Info
         GHCi.UI.Monad
-        GHCi.UI.Tags
+        GHCi.UI.Exception
         GHCi.Util
         GHCMain
     hs-source-dirs:

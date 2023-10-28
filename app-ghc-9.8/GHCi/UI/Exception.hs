@@ -1,6 +1,9 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE BangPatterns #-}
+
 module GHCi.UI.Exception(printGhciException, GHCiMessage(..)) where
 
 import GHC.Prelude

@@ -616,7 +616,17 @@ dapScopesCmd_ args = moveScope >> makeResponse
       | otherwise = forward (negate moveIdx)
 
 
-#if __GLASGOW_HASKELL__ >= 904
+#if __GLASGOW_HASKELL__ >= 908
+    -- |
+    --
+    getGlobalBindings :: Gi.GHCi [GAC.TyThing]
+    getGlobalBindings = GAC.withSession $ \hsc_env -> do
+      let ic = GAC.hsc_IC hsc_env
+          gb = GAC.ic_rn_gbl_env ic
+          es = GAC.globalRdrEnvElts gb
+          ns = map GAC.gre_name es
+      foldM withName [] $ reverse ns
+#elif __GLASGOW_HASKELL__ >= 904
     -- |
     --
     getGlobalBindings :: Gi.GHCi [GAC.TyThing]
