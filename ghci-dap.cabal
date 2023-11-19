@@ -63,7 +63,7 @@ executable ghci-dap
       Paths_ghci_dap
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall -fno-warn-unused-do-bind -fno-warn-name-shadowing
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall -fno-warn-unused-do-bind -fno-warn-name-shadowing -Wno-x-partial
   cpp-options: -DGHCI -DHAVE_INTERNAL_INTERPRETER -DGHC_LOADED_INTO_GHCI
   cc-options: -fPIC
   build-depends:
