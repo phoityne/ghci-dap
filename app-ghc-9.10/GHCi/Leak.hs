@@ -83,3 +83,4 @@ checkLeakIndicators dflags (LeakIndicators leakmods)  = do
 
   maskTagBits :: Ptr a -> Ptr a
   maskTagBits p = intPtrToPtr (ptrToIntPtr p .&. complement (shiftL 1 tagBits - 1))
+

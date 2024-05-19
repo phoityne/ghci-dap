@@ -193,7 +193,6 @@ import qualified GHC.Unit.Module.Graph as GHC
 import qualified GHCi.DAP.Type as DAP
 import Control.Concurrent
 
-
 -----------------------------------------------------------------------------
 
 data GhciSettings = GhciSettings {

@@ -82,3 +82,4 @@ parseName s = do
 --
 fls2fs :: FieldLabelString -> FastString
 fls2fs (FieldLabelString v) = v
+

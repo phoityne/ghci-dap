@@ -142,3 +142,4 @@ ghciDiagnosticMessage ghc_opts msg =
               quotes (text ":set -package " <> ppr (unitPackageName pkg)) <+>
               text "to expose it." $$
               text "(Note: this unloads all the modules in the current scope.)"
+

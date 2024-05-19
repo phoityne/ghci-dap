@@ -408,3 +408,4 @@ type GenericQ r = forall a. Data a => a -> r
 
 mkQ :: (Typeable a, Typeable b) => r -> (b -> r) -> a -> r
 (r `mkQ` br) a = maybe r br (cast a)
+
