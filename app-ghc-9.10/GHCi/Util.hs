@@ -14,4 +14,3 @@ anyToPtr :: a -> IO (Ptr ())
 anyToPtr x =
   IO (\s -> case anyToAddr# x s of
               (# s', addr #) -> (# s', Ptr addr #)) :: IO (Ptr ())
-

@@ -105,7 +105,6 @@ import qualified Data.List.NonEmpty as NE
 import qualified GHC.Paths
 
 
-
 -----------------------------------------------------------------------------
 -- ToDo:
 
