@@ -52,6 +52,9 @@ library
   if impl(ghc < 8.10.0)
     build-depends:
         unsupported-ghc-version >1 && <1
+  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.5.9))
+    build-depends:
+        unsupported-ghc-version >1 && <1
 
 executable ghci-dap
   main-is: Main.hs
@@ -103,6 +106,9 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-8.10
+  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.5.9))
+    build-depends:
+        unsupported-ghc-version >1 && <1
   if (impl(ghc >= 9.6.1)) && (impl(ghc < 9.7.0))
     other-modules:
         GHCi.GhcApiCompat
