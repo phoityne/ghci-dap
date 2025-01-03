@@ -194,7 +194,11 @@ throwError = liftIO . GAC.throwIO . userError
 -- |
 --
 isExceptionResume :: G.Resume -> Bool
+#if __GLASGOW_HASKELL__ >= 912
+isExceptionResume (G.Resume{G.resumeBreakpointId = a}) = isNothing a
+#else
 isExceptionResume (G.Resume{G.resumeBreakInfo = a}) = isNothing a
+#endif
 
 --------------------------------------------------------------------
 -- |
@@ -318,13 +322,20 @@ execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Left (GAC.SomeExc
          , D.descriptionStoppedEventBody = show e
          , D.textStoppedEventBody = show e
          }
-
+#if __GLASGOW_HASKELL__ >= 912
+execResult2StoppedEventBody reason (G.ExecBreak{G.breakPointId = Just _}) = do
+#else
 execResult2StoppedEventBody reason (G.ExecBreak{G.breakInfo = Just (GAC.BreakInfo _ _)}) = do
+#endif
   return D.defaultStoppedEventBody {
            D.reasonStoppedEventBody = reason
          }
 
+#if __GLASGOW_HASKELL__ >= 912
+execResult2StoppedEventBody _ (G.ExecBreak{G.breakPointId = Nothing}) = do
+#else
 execResult2StoppedEventBody _ (G.ExecBreak{G.breakInfo = Nothing}) = do
+#endif
   -- have to :force _exception first.
   -- then can show it.
   debugL "stopped by exception"
@@ -366,7 +377,11 @@ runStmtVar stmt = do
   Gi.runStmt stmt G.RunToCompletion >>= \case
     Nothing -> getRunStmtSourceError >>= throwError
     Just (G.ExecBreak _ Nothing) -> throwError $ "unexpected break occured while evaluating stmt:" ++ stmt
-    Just (G.ExecBreak _ (Just (GAC.BreakInfo (GAC.Module _ modName) idx)))   -> do
+#if __GLASGOW_HASKELL__ >= 912
+    Just (G.ExecBreak _ (Just (GAC.InternalBreakpointId _ _ (GAC.Module _ modName) idx))) -> do
+#else
+    Just (G.ExecBreak _ (Just (GAC.BreakInfo (GAC.Module _ modName) idx))) -> do
+#endif
       let modStr = G.moduleNameString modName
       let msg    = "unexpected break occured. breakNo:" ++ show idx
                    ++ " in " ++ modStr ++ " while evaluating stmt:" ++ stmt

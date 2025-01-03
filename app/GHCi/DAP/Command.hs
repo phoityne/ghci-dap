@@ -515,7 +515,11 @@ dapStackTraceCmd_ _ = do
     -- |
     --
     getStackFrameTitle :: G.Resume -> String
+#if __GLASGOW_HASKELL__ >= 912
+    getStackFrameTitle r =  maybe "unknown" (G.moduleNameString  . G.moduleName . G.ibi_tick_mod) (G.resumeBreakpointId r)
+#else
     getStackFrameTitle r =  maybe "unknown" (G.moduleNameString  . G.moduleName . G.breakInfo_module) (G.resumeBreakInfo r)
+#endif
                          ++ "."
                          ++ G.resumeDecl r
 
@@ -910,7 +914,11 @@ dapContinueCmd_ args = do
     --
     hasBreaked :: Gi.GHCi Bool
     hasBreaked = getContinueExecResult >>= \case
+#if __GLASGOW_HASKELL__ >= 912
+      Just G.ExecBreak {G.breakPointId  = Just _} -> return True
+#else
       Just G.ExecBreak {G.breakInfo = Just _} -> return True
+#endif
       _ -> return False
 
     -- |
@@ -919,7 +927,11 @@ dapContinueCmd_ args = do
     isBreakthrough = G.getResumeContext >>= \case
       []    -> warnL "invalid resume state. resume not found."
             >> return False
+#if __GLASGOW_HASKELL__ >= 912
+      (r:_) -> pure (G.resumeBreakpointId r)
+#else
       (r:_) -> pure (G.resumeBreakInfo r)
+#endif
            >>= Gi.toBreakIdAndLocation
            >>= withBreakInfo
 

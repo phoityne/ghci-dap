@@ -33,7 +33,10 @@ module GHCi.UI.Monad (
         turnOffBuffering, turnOffBuffering_,
         flushInterpBuffers,
         runInternal,
-        mkEvalWrapper
+        mkEvalWrapper,
+
+        -- DAP added.
+        dapLookupMaxBreakLocation
     ) where
 
 import GHCi.UI.Info (ModInfo)
@@ -81,6 +84,12 @@ import Data.Map.Strict (Map)
 import qualified Data.IntMap.Strict as IntMap
 import qualified GHC.Data.EnumSet as EnumSet
 import qualified GHC.LanguageExtensions as LangExt
+
+-- DAP add.
+import qualified GHCi.DAP.Type as DAP
+import Control.Concurrent
+import GHC.Types.SourceError
+
 
 -----------------------------------------------------------------------------
 -- GHCi monad
@@ -167,7 +176,8 @@ data GHCiState = GHCiState
             -- ^ @hFlush stdout; hFlush stderr@ in the interpreter
         noBuffering :: ForeignHValue,
             -- ^ @hSetBuffering NoBuffering@ for stdin/stdout/stderr
-        ifaceCache :: ModIfaceCache
+        ifaceCache :: ModIfaceCache,
+        dapContextGHCiState :: DAP.MVarDAPContext    -- DAP added.
      }
 
 type TickArray = Array Int [(GHC.BreakIndex,RealSrcSpan)]
@@ -404,7 +414,7 @@ runStmt
   => GhciLStmt GhcPs -> String -> GHC.SingleStep -> m (Maybe GHC.ExecResult)
 runStmt stmt stmt_text step = do
   st <- getGHCiState
-  GHC.handleSourceError (\e -> do printGhciException e; return Nothing) $ do
+  GHC.handleSourceError (\e -> do GHC.printException e; dapSaveRunStmtDeclException e; return Nothing) $ do    -- DAP modified.
     let opts = GHC.execOptions
                   { GHC.execSourceFile = progname st
                   , GHC.execLineNumber = line_number st
@@ -421,6 +431,7 @@ runDecls decls = do
     withArgs (args st) $
       reflectGHCi x $ do
         GHC.handleSourceError (\e -> do printGhciException e
+                                        dapSaveRunStmtDeclException e;         -- DAP added.
                                         return Nothing) $ do
           r <- GHC.runDeclsWithLocation (progname st) (line_number st) decls
           return (Just r)
@@ -577,3 +588,29 @@ runInternal =
 
 compileGHCiExpr :: GhcMonad m => String -> m ForeignHValue
 compileGHCiExpr expr = runInternal $ GHC.compileExprRemote expr
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Utility
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+dapSaveRunStmtDeclException :: GhciMonad m => SourceError -> m SourceError
+dapSaveRunStmtDeclException res = do
+  mvarCtx <- dapContextGHCiState <$> getGHCiState
+
+  ctx <- liftIO $ takeMVar mvarCtx
+  liftIO $ putMVar mvarCtx ctx{DAP.runStmtDeclExceptionDAPContext = Just res}
+
+  return res
+
+
+-- |
+--
+dapLookupMaxBreakLocation :: GhciMonad m => m (Maybe (Int, BreakLocation))
+dapLookupMaxBreakLocation = do
+  newSt <- getGHCiState
+  return $ IntMap.lookupMax (breaks newSt)
+
+

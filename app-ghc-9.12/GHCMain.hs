@@ -4,7 +4,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS -fno-warn-incomplete-patterns -optc-DNON_POSIX_SOURCE #-}
 
-
 -----------------------------------------------------------------------------
 --
 -- GHC Driver program
@@ -13,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Main (main) where
+module GHCMain (ghcMain) where    -- DAP Modified
 
 -- The official GHC API
 import qualified GHC
@@ -40,7 +39,7 @@ import GHC.Platform.Ways
 import GHC.Platform.Host
 
 #if defined(HAVE_INTERNAL_INTERPRETER)
-import GHCi.UI              ( interactiveUI, ghciWelcomeMsg, defaultGhciSettings )
+import GHCi.UI              ( interactiveUI, ghciWelcomeMsg, GhciSettings )  -- DAP Modified
 #endif
 
 import GHC.Runtime.Loader   ( loadFrontendPlugin, initializeSessionPlugins )
@@ -102,6 +101,10 @@ import Data.Bifunctor
 import GHC.Data.Graph.Directed
 import qualified Data.List.NonEmpty as NE
 
+-- DAP add
+import qualified GHC.Paths
+
+
 -----------------------------------------------------------------------------
 -- ToDo:
 
@@ -114,8 +117,8 @@ import qualified Data.List.NonEmpty as NE
 -----------------------------------------------------------------------------
 -- GHC's command-line interface
 
-main :: IO ()
-main = do
+ghcMain :: GhciSettings -> IO ()    -- DAP Modified
+ghcMain setting = do                -- DAP Modified
    hSetBuffering stdout LineBuffering
    hSetBuffering stderr LineBuffering
 
@@ -125,7 +128,7 @@ main = do
     argv0 <- getArgs
 
     let (minusB_args, argv1) = partition ("-B" `isPrefixOf`) argv0
-        mbMinusB | null minusB_args = Nothing
+        mbMinusB | null minusB_args = Just GHC.Paths.libdir       -- DAP Modified
                  | otherwise = Just (drop 2 (last minusB_args))
 
     let argv2 = map (mkGeneralLocated "on the commandline") argv1
@@ -163,11 +166,11 @@ main = do
                             ShowGhciUsage          -> showGhciUsage dflags
                             PrintWithDynFlags f    -> putStrLn (f dflags)
                 Right postLoadMode ->
-                    main' postLoadMode units dflags argv3 flagWarnings
+                    main' setting postLoadMode units dflags argv3 flagWarnings          -- DAP Modified
 
-main' :: PostLoadMode -> [String] -> DynFlags -> [Located String] -> [Warn]
+main' :: GhciSettings -> PostLoadMode -> [String] -> DynFlags -> [Located String] -> [Warn]   -- DAP Modified
       -> Ghc ()
-main' postLoadMode units dflags0 args flagWarnings = do
+main' setting postLoadMode units dflags0 args flagWarnings = do                         -- DAP Modified
   let args' = case postLoadMode of
                 DoRun -> takeWhile (\arg -> unLoc arg /= "--") args
                 _     -> args
@@ -312,9 +315,9 @@ main' postLoadMode units dflags0 args flagWarnings = do
        DoMake                 -> doMake units srcs
        DoMkDependHS           -> doMkDependHS (map fst srcs)
        StopBefore p           -> liftIO (oneShot hsc_env p srcs)
-       DoInteractive          -> ghciUI units srcs Nothing
-       DoEval exprs           -> ghciUI units srcs $ Just $ reverse exprs
-       DoRun                  -> doRun units srcs args
+       DoInteractive          -> ghciUI setting units srcs Nothing                       -- DAP Modified
+       DoEval exprs           -> ghciUI setting units srcs $ Just $ reverse exprs        -- DAP Modified
+       DoRun                  -> doRun setting units srcs args                           -- DAP Modified
        DoAbiHash              -> abiHash (map fst srcs)
        ShowPackages           -> liftIO $ showUnits hsc_env
        DoFrontend f           -> doFrontend f srcs
@@ -322,20 +325,20 @@ main' postLoadMode units dflags0 args flagWarnings = do
 
   liftIO $ dumpFinalStats logger
 
-doRun :: [String] -> [(FilePath, Maybe Phase)] -> [Located String] -> Ghc ()
-doRun units srcs args = do
+doRun :: GhciSettings -> [String] -> [(FilePath, Maybe Phase)] -> [Located String] -> Ghc ()    -- DAP Modified
+doRun setting units srcs args = do
     dflags <- getDynFlags
     let mainFun = fromMaybe "main" (mainFunIs dflags)
-    ghciUI units srcs (Just ["System.Environment.withArgs " ++ show args' ++ " (Control.Monad.void " ++ mainFun ++ ")"])
+    ghciUI setting units srcs (Just ["System.Environment.withArgs " ++ show args' ++ " (Control.Monad.void " ++ mainFun ++ ")"])  -- DAP Modified
   where
     args' = drop 1 $ dropWhile (/= "--") $ map unLoc args
 
-ghciUI :: [String] -> [(FilePath, Maybe Phase)] -> Maybe [String] -> Ghc ()
+ghciUI :: GhciSettings -> [String] -> [(FilePath, Maybe Phase)] -> Maybe [String] -> Ghc ()    -- DAP Modified
 #if !defined(HAVE_INTERNAL_INTERPRETER)
-ghciUI _ _ _ =
+ghciUI _ _ _ _ =        -- DAP Modified
   throwGhcException (CmdLineError "not built for interactive use")
 #else
-ghciUI units srcs maybe_expr = do
+ghciUI st units srcs maybe_expr = do               -- DAP Modified
   hs_srcs <- case NE.nonEmpty units of
     Just ne_units -> do
       initMulti ne_units
@@ -345,7 +348,7 @@ ghciUI units srcs maybe_expr = do
         _  -> do
           s <- initMake srcs
           return $ map (uncurry (,Nothing,)) s
-  interactiveUI defaultGhciSettings hs_srcs maybe_expr
+  interactiveUI st hs_srcs maybe_expr             -- DAP Modified
 #endif
 
 

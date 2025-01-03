@@ -27,7 +27,22 @@ module GHCi.UI (
         GhciSettings(..),
         defaultGhciSettings,
         ghciCommands,
-        ghciWelcomeMsg
+        ghciWelcomeMsg,
+        -- DAP add.
+        getLoadedModules,
+        breakCmd,
+        deleteCmd,
+        backCmd,
+        forwardCmd,
+        historyCmd,
+        traceCmd,
+        stepCmd,
+        stepLocalCmd,
+        runStmt,
+        toBreakIdAndLocation,
+        forceCmd,
+        setContext,
+        keepGoing
     ) where
 
 -- GHCi
@@ -173,6 +188,13 @@ import GHC.TopHandler ( topHandler )
 import GHCi.Leak
 import qualified GHC.Unit.Module.Graph as GHC
 
+------------------------------------------------------------------------------
+-- DAP
+------------------------------------------------------------------------------
+import qualified GHCi.DAP.Type as DAP
+import Control.Concurrent
+
+
 -----------------------------------------------------------------------------
 
 data GhciSettings = GhciSettings {
@@ -180,17 +202,19 @@ data GhciSettings = GhciSettings {
         shortHelpText     :: String,
         fullHelpText      :: String,
         defPrompt         :: PromptFunction,
-        defPromptCont     :: PromptFunction
+        defPromptCont     :: PromptFunction,
+        dapContextGhciSettings :: DAP.MVarDAPContext
     }
 
-defaultGhciSettings :: GhciSettings
-defaultGhciSettings =
+defaultGhciSettings :: DAP.MVarDAPContext -> GhciSettings
+defaultGhciSettings dapCtx =
     GhciSettings {
         availableCommands = ghciCommands,
         shortHelpText     = defShortHelpText,
         defPrompt         = default_prompt,
         defPromptCont     = default_prompt_cont,
-        fullHelpText      = defFullHelpText
+        fullHelpText      = defFullHelpText,
+        dapContextGhciSettings = dapCtx
     }
 
 ghciWelcomeMsg :: String
@@ -594,7 +618,8 @@ interactiveUI config srcs maybe_exprs = do
                    mod_infos          = M.empty,
                    flushStdHandles    = flush,
                    noBuffering        = nobuffering,
-                   ifaceCache = empty_cache
+                   ifaceCache = empty_cache,
+                   dapContextGHCiState = dapContextGhciSettings config
                  }
 
    return ()
@@ -757,7 +782,7 @@ runGHCi paths maybe_exprs = do
 
   -- if verbosity is greater than 0, or we are connected to a
   -- terminal, display the prompt in the interactive loop.
-  is_tty <- liftIO (hIsTerminalDevice stdin)
+  is_tty <- liftIO (return True)     -- DAP modified.
   let show_prompt = verbosity dflags > 0 || is_tty
 
   -- reset line number
@@ -3890,7 +3915,7 @@ traceCmd arg
   = withSandboxOnly ":trace" $ tr arg
   where
   tr []         = doContinue (const True) GHC.RunAndLogSteps
-  tr expression = runStmt expression GHC.RunAndLogSteps >> return ()
+  tr expression = runStmt expression GHC.RunAndLogSteps >>= setContinueExecResult >> return ()   -- DAP added
 
 continueCmd :: GhciMonad m => String -> m ()                  -- #19157
 continueCmd argLine = withSandboxOnly ":continue" $
@@ -3910,6 +3935,7 @@ doContinue pre step = doContinue' pre step Nothing
 doContinue' :: GhciMonad m => (SrcSpan -> Bool) -> SingleStep -> Maybe Int -> m ()
 doContinue' pre step mbCnt= do
   runResult <- resume pre step mbCnt
+  setContinueExecResult (Just runResult)   -- DAP added.
   _ <- afterRunStmt pre runResult
   return ()
 
@@ -3992,7 +4018,7 @@ enaDisaAllBreaks enaDisa = do
     st <- getGHCiState
     mapM_ (enaDisaAssoc enaDisa) $ IntMap.assocs $ breaks st
 
-historyCmd :: GHC.GhcMonad m => String -> m ()
+historyCmd :: GhciMonad m => String -> m ()   -- DAP Modified
 historyCmd arg
   | null arg        = history 20
   | all isDigit arg = history (read arg)
@@ -4018,6 +4044,7 @@ historyCmd arg
                                  (map (bold . hcat . punctuate colon . map text) names)
                                  (map (parens . ppr) pans)))
                  liftIO $ putStrLn $ if null rest then "<end of history>" else "..."
+        setStackTraceResult r took   -- DAP added.
 
 bold :: SDoc -> SDoc
 bold c | do_bold   = text start_bold <> c <> text end_bold
@@ -4068,6 +4095,7 @@ backCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
+      setBindingNames names      -- DAP added.
 
 forwardCmd :: GhciMonad m => String -> m ()
 forwardCmd arg
@@ -4084,6 +4112,7 @@ forwardCmd arg
        -- run the command set with ":set stop <cmd>"
       st <- getGHCiState
       enqueueCommands [stop st]
+      setBindingNames names   -- DAP added.
 
 -- handle the "break" command
 breakCmd :: GhciMonad m => String -> m ()
@@ -4735,3 +4764,38 @@ combineModIdent mod ident
           | null mod   = ident
           | null ident = mod
           | otherwise  = mod ++ "." ++ ident
+
+
+------------------------------------------------------------------------------------------------
+--  DAP Utility
+------------------------------------------------------------------------------------------------
+
+-- |
+--
+setStackTraceResult :: GhciMonad m => Resume -> [GHC.History] -> m ()
+setStackTraceResult r hs = do
+  ctxMVar <- dapContextGHCiState <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx {DAP.stackTraceResultDAPContext = Just (r, hs)}
+
+
+-- |
+--
+setBindingNames :: GhciMonad m => [Name] -> m ()
+setBindingNames names = do
+  ctxMVar <- dapContextGHCiState <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx {DAP.bindingNamesDAPContext = names}
+
+
+-- |
+--
+setContinueExecResult :: GhciMonad m => Maybe GHC.ExecResult -> m (Maybe GHC.ExecResult)
+setContinueExecResult res = do
+  ctxMVar <- dapContextGHCiState  <$> getGHCiState
+  ctx <- liftIO $ takeMVar ctxMVar
+  liftIO $ putMVar ctxMVar ctx{DAP.continueExecResultDAPContext = res}
+  return res
+
+
+
