@@ -52,7 +52,7 @@ library
   if impl(ghc < 8.10.0)
     build-depends:
         unsupported-ghc-version >1 && <1
-  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.5.9))
+  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.3.9))
     build-depends:
         unsupported-ghc-version >1 && <1
 
@@ -106,9 +106,21 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-8.10
-  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.5.9))
+  if (impl(ghc >= 9.0.1)) && (impl(ghc < 9.3.9))
     build-depends:
         unsupported-ghc-version >1 && <1
+  if (impl(ghc >= 9.4.1)) && (impl(ghc < 9.5.0))
+    other-modules:
+        GHCi.GhcApiCompat
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Tags
+        GHCi.Util
+        GHCMain
+    hs-source-dirs:
+        app-ghc-9.4
   if (impl(ghc >= 9.6.1)) && (impl(ghc < 9.7.0))
     other-modules:
         GHCi.GhcApiCompat
