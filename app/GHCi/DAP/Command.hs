@@ -207,7 +207,7 @@ setBpCmd_ args =
     -- |
     --
     takeModPath :: GAC.ModSummary -> (ModuleName, FilePath)
-    takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
+    takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), GAC.msHsFilePath ms)
 
 
     -- |
