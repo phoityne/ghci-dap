@@ -1,5 +1,10 @@
+20250401 ghci-dap-0.0.25.0
+  * [PR] Fix loading of modules that use CPP (#15) 
+
+
 20250209 ghci-dap-0.0.24.0
   * [INFO] support ghc-9.12.1.
+
 
 20240630 ghci-dap-0.0.23.0
   * [INFO] support ghc-9.10.1.
