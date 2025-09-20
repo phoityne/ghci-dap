@@ -145,7 +145,7 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-9.8
-  if (impl(ghc >= 9.10.1)) && (impl(ghc < 9.11.0))
+  if (impl(ghc >= 9.10.1)) && (impl(ghc < 9.10.2))
     other-modules:
         GHCi.GhcApiCompat
         GHCi.Leak
@@ -157,6 +157,18 @@ executable ghci-dap
         GHCMain
     hs-source-dirs:
         app-ghc-9.10
+  if (impl(ghc >= 9.10.2)) && (impl(ghc < 9.11.0))
+    other-modules:
+        GHCi.GhcApiCompat
+        GHCi.Leak
+        GHCi.UI
+        GHCi.UI.Info
+        GHCi.UI.Monad
+        GHCi.UI.Exception
+        GHCi.Util
+        GHCMain
+    hs-source-dirs:
+        app-ghc-9.10.2
   if (impl(ghc >= 9.12.1)) && (impl(ghc < 9.13.0))
     other-modules:
         GHCi.GhcApiCompat
