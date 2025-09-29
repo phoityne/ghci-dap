@@ -194,7 +194,7 @@ throwError = liftIO . GAC.throwIO . userError
 -- |
 --
 isExceptionResume :: G.Resume -> Bool
-#if __GLASGOW_HASKELL__ >= 912
+#if __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
 isExceptionResume (G.Resume{G.resumeBreakpointId = a}) = isNothing a
 #else
 isExceptionResume (G.Resume{G.resumeBreakInfo = a}) = isNothing a
@@ -322,7 +322,7 @@ execResult2StoppedEventBody _ (G.ExecComplete { G.execResult = Left (GAC.SomeExc
          , D.descriptionStoppedEventBody = show e
          , D.textStoppedEventBody = show e
          }
-#if __GLASGOW_HASKELL__ >= 912
+#if __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
 execResult2StoppedEventBody reason (G.ExecBreak{G.breakPointId = Just _}) = do
 #else
 execResult2StoppedEventBody reason (G.ExecBreak{G.breakInfo = Just (GAC.BreakInfo _ _)}) = do
@@ -331,7 +331,7 @@ execResult2StoppedEventBody reason (G.ExecBreak{G.breakInfo = Just (GAC.BreakInf
            D.reasonStoppedEventBody = reason
          }
 
-#if __GLASGOW_HASKELL__ >= 912
+#if __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
 execResult2StoppedEventBody _ (G.ExecBreak{G.breakPointId = Nothing}) = do
 #else
 execResult2StoppedEventBody _ (G.ExecBreak{G.breakInfo = Nothing}) = do
@@ -377,7 +377,7 @@ runStmtVar stmt = do
   Gi.runStmt stmt G.RunToCompletion >>= \case
     Nothing -> getRunStmtSourceError >>= throwError
     Just (G.ExecBreak _ Nothing) -> throwError $ "unexpected break occured while evaluating stmt:" ++ stmt
-#if __GLASGOW_HASKELL__ >= 912
+#if __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
     Just (G.ExecBreak _ (Just (GAC.InternalBreakpointId _ _ (GAC.Module _ modName) idx))) -> do
 #else
     Just (G.ExecBreak _ (Just (GAC.BreakInfo (GAC.Module _ modName) idx))) -> do
