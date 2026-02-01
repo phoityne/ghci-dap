@@ -4,6 +4,7 @@
 module GHCi.DAP.Utility where
 
 import qualified GHC as G
+
 import qualified GHCi.UI.Monad as Gi hiding (runStmt)
 import qualified GHCi.UI as Gi
 import qualified Data.Char as CH
@@ -13,6 +14,11 @@ import Control.Concurrent
 import Control.Monad
 import qualified Data.Map as M
 import System.Directory
+
+#if __GLASGOW_HASKELL__ >= 914
+import qualified GHC.Unit.Module.Graph as G
+import System.OsPath
+#endif
 
 import qualified GHCi.GhcApiCompat as GAC
 
@@ -90,8 +96,20 @@ nzPath = drive2lower . win2unixSlash
 
 -- |
 --
-takeModPath :: GAC.ModSummary -> (String, FilePath)
-takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), G.ms_hspp_file ms)
+#if __GLASGOW_HASKELL__ >= 914
+takeModPathM :: G.ModuleNodeInfo -> Gi.GHCi (ModuleName, FilePath)
+takeModPathM ms = do
+  let name = G.moduleNameString (G.moduleNodeInfoModuleName ms)
+      loc = G.moduleNodeInfoLocation ms
+  path <- case G.ml_hs_file_ospath loc of
+    Nothing -> return ""
+    Just fp -> decodeUtf fp
+
+  return (name, path)
+#else
+takeModPath :: GAC.ModSummary -> (ModuleName, FilePath)
+takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), GAC.msHsFilePath ms)
+#endif
 
 
 -- |
@@ -281,7 +299,11 @@ addBreakpoint argStr = do
         D.idBreakpoint        = Just no
       , D.verifiedBreakpoint  = True
       , D.sourceBreakpoint    = D.defaultSource {
+#if __GLASGOW_HASKELL__ >= 914
+          D.nameSource             = (Just . G.moduleNameString . G.moduleName . G.bi_tick_mod . Gi.breakId) bpLoc
+#else
           D.nameSource             = (Just . G.moduleNameString . G.moduleName . Gi.breakModule) bpLoc
+#endif
         , D.pathSource             = (GAC.unpackFS . G.srcSpanFile) dat
         , D.sourceReferenceSource  = Nothing
         , D.originSource           = Nothing
@@ -377,7 +399,9 @@ runStmtVar stmt = do
   Gi.runStmt stmt G.RunToCompletion >>= \case
     Nothing -> getRunStmtSourceError >>= throwError
     Just (G.ExecBreak _ Nothing) -> throwError $ "unexpected break occured while evaluating stmt:" ++ stmt
-#if __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
+#if __GLASGOW_HASKELL__ >= 914
+    Just (G.ExecBreak _ (Just (GAC.InternalBreakpointId (GAC.Module _ modName) idx))) -> do  
+#elif __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
     Just (G.ExecBreak _ (Just (GAC.InternalBreakpointId _ _ (GAC.Module _ modName) idx))) -> do
 #else
     Just (G.ExecBreak _ (Just (GAC.BreakInfo (GAC.Module _ modName) idx))) -> do

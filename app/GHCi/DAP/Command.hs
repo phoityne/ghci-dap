@@ -23,7 +23,9 @@ import GHCi.DAP.Constant
 import GHCi.DAP.Utility
 import qualified Haskell.DAP as D
 
-#if __GLASGOW_HASKELL__ >= 900
+#if __GLASGOW_HASKELL__ >= 914
+import qualified GHC.Unit.Module.Graph as G
+#elif __GLASGOW_HASKELL__ >= 900
 import qualified GHC.Data.StringBuffer as SB (lexemeToString, len)
 #else
 #endif
@@ -123,7 +125,11 @@ contextModulesCmd _ = flip gcatch errHdl $ do
 contextModulesCmd_ :: Gi.GHCi (Either String ())
 contextModulesCmd_ = do
   modSums <- Gi.getLoadedModules
+#if __GLASGOW_HASKELL__ >= 914
+  let modNames = map G.moduleNodeInfoModuleName modSums
+#else
   let modNames = map GAC.ms_mod_name modSums
+#endif
       modNameStrs = map G.moduleNameString modNames
 
   Gi.setContext modNames []
@@ -194,8 +200,11 @@ setBpCmd_ args =
           srcPath = D.pathSource srcInfo
 
       modSums <- Gi.getLoadedModules
+#if __GLASGOW_HASKELL__ >= 914
+      modPaths <- mapM takeModPathM modSums
+#else
       let modPaths = map takeModPath modSums
-
+#endif
       findModule srcPath modPaths >>= \case
         Just (m, p) -> do
           debugL $ "<getModule> " ++ p ++ " -> " ++ m
@@ -204,10 +213,6 @@ setBpCmd_ args =
         Nothing -> throwError $ "<getModule> loaded module can not find from path. <" ++ srcPath ++ "> " ++  show modPaths
 
 
-    -- |
-    --
-    takeModPath :: GAC.ModSummary -> (ModuleName, FilePath)
-    takeModPath ms = (G.moduleNameString (G.ms_mod_name ms), GAC.msHsFilePath ms)
 
 
     -- |
@@ -360,7 +365,13 @@ setFuncBpCmd_ (startup, funcBP) = do
     getModuleByFile :: Gi.GHCi String
     getModuleByFile = do
       modSums <- Gi.getLoadedModules
+
+#if __GLASGOW_HASKELL__ >= 914
+      modPaths <- mapM takeModPathM modSums
+#else
       let modPaths = map takeModPath modSums
+#endif
+
 
       findModule startup modPaths >>= \case
         Just (m, p) -> do
@@ -515,7 +526,9 @@ dapStackTraceCmd_ _ = do
     -- |
     --
     getStackFrameTitle :: G.Resume -> String
-#if __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
+#if __GLASGOW_HASKELL__ >= 914
+    getStackFrameTitle r =  maybe "unknown" (G.moduleNameString  . G.moduleName . G.ibi_info_mod) (G.resumeBreakpointId r)
+#elif __GLASGOW_HASKELL__ >= 912 || __GLASGOW_HASKELL__ >= 910 && __GLASGOW_HASKELL_PATCHLEVEL1__ >= 2
     getStackFrameTitle r =  maybe "unknown" (G.moduleNameString  . G.moduleName . G.ibi_tick_mod) (G.resumeBreakpointId r)
 #else
     getStackFrameTitle r =  maybe "unknown" (G.moduleNameString  . G.moduleName . G.breakInfo_module) (G.resumeBreakInfo r)
@@ -1165,7 +1178,14 @@ sourceCmd argsStr = flip gcatch errHdl $ do
 sourceCmd_ :: D.SourceRequestArguments
           -> Gi.GHCi (Either String D.SourceResponseBody)
 
-#if __GLASGOW_HASKELL__ >= 900
+#if __GLASGOW_HASKELL__ >= 914
+-- |
+-- https://hackage-content.haskell.org/package/ghc-9.14.1/docs/GHC-Unit-Module-Graph.html#t:ModuleNodeInfo
+-- https://hackage-content.haskell.org/package/ghc-9.14.1/docs/GHC-Unit-Module-ModSummary.html
+-- Gi.getLoadedModules returns ModuleNodeInfo list, not ModSummary list.
+--
+sourceCmd_ _ = throwError "<sourceCmd_> not supported from ghc9.14."
+#elif __GLASGOW_HASKELL__ >= 900
 sourceCmd_ args = do
   modSums <- Gi.getLoadedModules
   case D.sourceSourceRequestArguments  args of
