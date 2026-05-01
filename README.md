@@ -20,4 +20,4 @@ Separated an implementation from the interface package.
 # Limitation
 Currently this project is an __experimental__ design and implementation.
 
-* Supported ghc-9.12, ghc-9.10
+* Supported ghc-9.14, ghc-9.12, ghc-9.10
